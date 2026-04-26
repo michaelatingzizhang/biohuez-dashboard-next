@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 245 33% 97%; /* #F5F5F2 - CREAM */
+    --foreground: 0 0% 10%; /* #1A1A1A - BLACK */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 108 32% 22%; /* #2D4A27 - SAGE_DARK */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 108 19% 47%; /* #6B8F61 - SAGE_MID */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 108 33% 90%; /* #B8D4AE - SAGE_LIGHT */
+    --muted-foreground: 108 19% 47%;
+    --accent: 108 33% 90%;
+    --accent-foreground: 108 32% 22%;
+    --destructive: 0 67% 46%; /* #C0392B - RED */
+    --destructive-foreground: 0 0% 100%;
+    --border: 108 33% 90%;
+    --input: 108 33% 90%;
+    --ring: 108 32% 22%;
+    --radius: 0.75rem;
+    
+    /* BioHuez specific colors */
+    --sage-dark: 108 32% 22%; /* #2D4A27 */
+    --sage-mid: 108 19% 47%; /* #6B8F61 */
+    --sage-light: 108 33% 90%; /* #B8D4AE */
+    --amber: 33 80% 52%; /* #E67E22 */
+    --green: 145 63% 42%; /* #27AE60 */
+    --blue: 204 64% 44%; /* #2980B9 */
+  }
+
+  .dark {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 108 32% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 108 19% 37%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 108 33% 20%;
+    --muted-foreground: 108 19% 57%;
+    --accent: 108 33% 20%;
+    --accent-foreground: 108 32% 32%;
+    --destructive: 0 67% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 108 33% 20%;
+    --input: 108 33% 20%;
+    --ring: 108 32% 32%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .bg-sage-dark { background-color: hsl(var(--sage-dark)); }
+  .text-sage-dark { color: hsl(var(--sage-dark)); }
+  .bg-sage-mid { background-color: hsl(var(--sage-mid)); }
+  .text-sage-mid { color: hsl(var(--sage-mid)); }
+  .bg-sage-light { background-color: hsl(var(--sage-light)); }
+  .text-sage-light { color: hsl(var(--sage-light)); }
+  .bg-amber { background-color: hsl(var(--amber)); }
+  .text-amber { color: hsl(var(--amber)); }
+  .bg-green { background-color: hsl(var(--green)); }
+  .text-green { color: hsl(var(--green)); }
+  .bg-blue { background-color: hsl(var(--blue)); }
+  .text-blue { color: hsl(var(--blue)); }
+}
