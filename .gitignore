@@ -25,6 +25,8 @@ venv/
 # Build artifacts
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+AUDIT.md
+.gitignore
 
 # OS
 .DS_Store
