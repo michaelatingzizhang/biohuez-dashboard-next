@@ -4,6 +4,7 @@ import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
+import { DataState } from '@/components/data-state'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   ComposedChart, AreaChart, Area, LineChart, Line, BarChart, Bar,
@@ -26,6 +27,7 @@ const AD_TYPE_COLORS: Record<string, string> = {
 interface SalesRow {
   date: string
   sku: string
+  sku_name?: string
   revenue: number
   orders: number
   units: number
@@ -143,9 +145,16 @@ export default function SalesPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error loading data: {data?.error}</div>
+  if (!data || data.error) return <DataState variant="error" title="Sales data could not load" description={data?.error || "The sales endpoint returned no response."} />
 
-  const { sales, ads, ads_by_type, bsr } = data
+  const sales = (data.sales || []).map((row) => ({
+    ...row,
+    sku: row.sku || row.sku_name || 'Unknown',
+  }))
+  const { ads, ads_by_type, bsr } = data
+  if (sales.length === 0) {
+    return <DataState title="No sales rows available" description="MotherDuck is connected, but the sales table has no rows for this dashboard yet." />
+  }
 
   // Aggregate totals
   const totalRevenue = sales.reduce((s, r) => s + (r.revenue || 0), 0)
@@ -271,8 +280,6 @@ export default function SalesPage() {
   }
 
   const totalAdOrders = ads.reduce((s, r) => s + (r.purchases_1d || 0), 0)
-  const totalSpend = totalAdSpend  // same as ad spend for now
-
   const proasChartData = Object.entries(unitEconByDate)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({
@@ -315,20 +322,22 @@ export default function SalesPage() {
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Revenue, traffic, BSR, and ad performance</p>
 
       <Tabs defaultValue="overview">
-        <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="traffic">Traffic</TabsTrigger>
-          <TabsTrigger value="bsr">BSR</TabsTrigger>
-          <TabsTrigger value="ads">Ads</TabsTrigger>
-          <TabsTrigger value="unit-economics">Unit Economics</TabsTrigger>
-          <TabsTrigger value="customer-journey">Customer Journey</TabsTrigger>
-        </TabsList>
+        <div className="dashboard-tabs-scroll">
+          <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="traffic">Traffic</TabsTrigger>
+            <TabsTrigger value="bsr">BSR</TabsTrigger>
+            <TabsTrigger value="ads">Ads</TabsTrigger>
+            <TabsTrigger value="unit-economics">Unit Economics</TabsTrigger>
+            <TabsTrigger value="customer-journey">Customer Journey</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* TAB 1: OVERVIEW */}
         <TabsContent value="overview">
-          {/* KPI Row 1: Last Full Month */}
-          <SectionHeader title="Last Full Month" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          {/* KPI Row 1: All available data */}
+          <SectionHeader title="All Available Data" />
+          <div className="dashboard-kpi-grid">
             <MetricCard label="Total Revenue" value={fmtMoney(totalRevenue)} />
             <MetricCard label="Total Orders" value={fmt(totalOrders)} />
             <MetricCard label="Total Units" value={fmt(totalUnits)} />
@@ -339,7 +348,7 @@ export default function SalesPage() {
 
           {/* KPI Row 2: Last 5 Weeks */}
           <SectionHeader title="Last 5 Weeks" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard label="ASP" value={fmtMoney(kpi5w.asp)} />
             <MetricCard label="pROAS" value={kpi5w.pROAS.toFixed(2) + 'x'} status={kpi5w.pROAS < 1 ? 'alert' : kpi5w.pROAS < 2 ? 'warn' : 'normal'} />
             <MetricCard label="CVR%" value={fmtPct(kpi5w.cvr)} />
@@ -350,7 +359,7 @@ export default function SalesPage() {
 
           {/* KPI Row 3: Last 10 Weeks */}
           <SectionHeader title="Last 10 Weeks" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard label="ASP" value={fmtMoney(kpi10w.asp)} />
             <MetricCard label="pROAS" value={kpi10w.pROAS.toFixed(2) + 'x'} status={kpi10w.pROAS < 1 ? 'alert' : kpi10w.pROAS < 2 ? 'warn' : 'normal'} />
             <MetricCard label="CVR%" value={fmtPct(kpi10w.cvr)} />
@@ -361,7 +370,7 @@ export default function SalesPage() {
 
           {/* Revenue vs Ad Spend Chart */}
           <SectionHeader title="Revenue vs Ad Spend" subtitle="Daily revenue by SKU with total ad spend overlay" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={revenueChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -382,7 +391,7 @@ export default function SalesPage() {
 
           {/* SKU Performance Table */}
           <SectionHeader title="SKU Performance" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+          <div className="dashboard-table-card">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -412,7 +421,7 @@ export default function SalesPage() {
         {/* TAB 2: TRAFFIC */}
         <TabsContent value="traffic">
           <SectionHeader title="Revenue by SKU Over Time" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={revenueChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -428,7 +437,7 @@ export default function SalesPage() {
             </ResponsiveContainer>
           </div>
           <SectionHeader title="Daily Orders by SKU" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             {(() => {
               const orderData = Object.entries(
                 sales.reduce<Record<string, Record<string, number>>>((acc, row) => {
@@ -459,7 +468,7 @@ export default function SalesPage() {
         {/* TAB 3: BSR */}
         <TabsContent value="bsr">
           <SectionHeader title="BSR Rank Over Time" subtitle="Lower rank = better position" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={bsrChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -475,7 +484,7 @@ export default function SalesPage() {
             </ResponsiveContainer>
           </div>
           <SectionHeader title="Current BSR" subtitle={`As of ${latestBsrDate || 'N/A'}`} />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+          <div className="dashboard-table-card">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -500,7 +509,7 @@ export default function SalesPage() {
 
         {/* TAB 4: ADS */}
         <TabsContent value="ads">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard label="Total Ad Spend" value={fmtMoney(totalAdSpend)} />
             <MetricCard label="Total Ad Sales" value={fmtMoney(totalAdSales)} />
             <MetricCard label="ACOS" value={fmtPct(acos)} status={acos > 40 ? 'alert' : acos > 25 ? 'warn' : 'normal'} />
@@ -508,7 +517,7 @@ export default function SalesPage() {
           </div>
 
           <SectionHeader title="Ad Spend by Type" subtitle="SP / SB / SD over time" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={adTypeChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -524,7 +533,7 @@ export default function SalesPage() {
           </div>
 
           <SectionHeader title="Daily ACOS%" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16 }}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={acosChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -540,14 +549,14 @@ export default function SalesPage() {
 
         {/* TAB 5: UNIT ECONOMICS */}
         <TabsContent value="unit-economics">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard label="pROAS (All)" value={totalAdSpend > 0 ? ((totalAdSales - 4.93 * totalUnits) / totalAdSpend).toFixed(2) + 'x' : '—'} />
             <MetricCard label="CAC (Ad)" value={totalAdOrders > 0 ? fmtMoney(totalAdSpend / totalAdOrders) : '—'} />
             <MetricCard label="Ad Units" value={fmt(totalAdOrders)} />
           </div>
 
           <SectionHeader title="pROAS Over Time" subtitle="Break-even at 1.0x" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={proasChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -563,7 +572,7 @@ export default function SalesPage() {
           </div>
 
           <SectionHeader title="CAC Over Time" subtitle="Customer acquisition cost" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16 }}>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={cacChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -581,7 +590,7 @@ export default function SalesPage() {
         {/* TAB 6: CUSTOMER JOURNEY */}
         <TabsContent value="customer-journey">
           {/* KPI Ribbon */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard
               label="Repeat Rate (Latest Month)"
               value={latestMonth ? fmtPct(latestMonth.repeat_rate) : '—'}
@@ -597,11 +606,11 @@ export default function SalesPage() {
           </div>
 
           {sortedMonthly.length === 0 ? (
-            <div style={{ padding: 40, color: '#888', textAlign: 'center' }}>No customer journey data available</div>
+            <DataState title="No customer journey data available" description="Repeat purchase and cohort inputs are not available yet." />
           ) : (
             <>
               <SectionHeader title="Revenue: New vs Repeat" subtitle="Monthly stacked revenue with repeat rate" />
-              <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={customerChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -622,7 +631,7 @@ export default function SalesPage() {
               </div>
 
               <SectionHeader title="Customers: New vs Repeat" subtitle="Monthly customer count breakdown" />
-              <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={customerChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -637,7 +646,7 @@ export default function SalesPage() {
               </div>
 
               <SectionHeader title="Customer Journey Detail" />
-              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+              <div className="dashboard-table-card">
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #EBEBEB' }}>

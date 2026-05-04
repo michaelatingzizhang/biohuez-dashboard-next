@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { SectionHeader } from '@/components/section-header'
@@ -67,9 +68,21 @@ export default function CompetitorPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return (
+    <DataState
+      title="Competitor data could not load"
+      description={data?.error || 'Check the scraper and Brand Analytics data connection, then refresh this page.'}
+      variant="error"
+    />
+  )
 
   const { competitor, bsr, competitor_reviews = [] } = data
+  if (competitor.length === 0 && bsr.length === 0 && competitor_reviews.length === 0) return (
+    <DataState
+      title="No competitor data yet"
+      description="BSR, review, and competitor snapshots will appear here after the scraper or Brand Analytics exports are available."
+    />
+  )
 
   // Build latest review row per ASIN
   const latestReviewByAsin: Record<string, ReviewRow> = {}
@@ -160,8 +173,8 @@ export default function CompetitorPage() {
           {/* Competitor snapshot cards */}
           {competitor.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
-              {competitor.map(row => (
-                <div key={row.asin} style={{ background: 'white', borderRadius: 10, padding: 14, borderLeft: '4px solid #C0392B', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
+              {competitor.map((row, index) => (
+                <div key={`${row.asin}-${row.captured_date}-${row.bsr_category}-${index}`} style={{ background: 'white', borderRadius: 10, padding: 14, borderLeft: '4px solid #C0392B', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
                   <div style={{ fontSize: '0.72rem', color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
                     {ASIN_LABELS[row.asin] || row.asin}
                   </div>
@@ -231,8 +244,8 @@ export default function CompetitorPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {competitor.sort((a, b) => a.bsr - b.bsr).map((row) => (
-                      <tr key={row.asin} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    {[...competitor].sort((a, b) => a.bsr - b.bsr).map((row, index) => (
+                      <tr key={`${row.asin}-${row.captured_date}-${row.bsr_category}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
                         <td style={{ padding: '8px 12px', color: '#888', fontSize: '0.75rem' }}>{ASIN_LABELS[row.asin] || row.asin}</td>
                         <td style={{ padding: '8px 12px', textAlign: 'right' }}>${row.price?.toFixed(2)}</td>
                         <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>#{row.bsr}</td>
@@ -249,9 +262,11 @@ export default function CompetitorPage() {
 
         <TabsContent value="reviews">
           {competitor_reviews.length === 0 ? (
-            <div style={{ background: '#F0F4EE', border: '1px solid #B8D4AE', borderRadius: 8, padding: 20, color: '#2D4A27' }}>
-              No scraped review data yet. The scraper runs daily at 8:30 AM.
-            </div>
+            <DataState
+              title="No scraped review data yet"
+              description="Ratings and review trends will appear after the next scraper run."
+              variant="info"
+            />
           ) : (
             <>
               {latestRevDate && (
@@ -326,19 +341,31 @@ export default function CompetitorPage() {
         </TabsContent>
 
         <TabsContent value="item">
-          <div style={{ background: '#F0F4EE', border: '1px solid #B8D4AE', borderRadius: 8, padding: 20, color: '#2D4A27' }}>
-            {data.item_comparison.length === 0
-              ? 'Brand Analytics item comparison data not yet available. This data shows which competitor ASINs customers viewed before purchasing BioHuez.'
-              : JSON.stringify(data.item_comparison.slice(0, 5))}
-          </div>
+          {data.item_comparison.length === 0 ? (
+            <DataState
+              title="Item comparison data is not available yet"
+              description="This section will show which competitor ASINs customers viewed before purchasing BioHuez."
+              variant="info"
+            />
+          ) : (
+            <div style={{ background: 'white', borderRadius: 10, padding: 16, color: '#2D4A27' }}>
+              {JSON.stringify(data.item_comparison.slice(0, 5))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="alt">
-          <div style={{ background: '#F0F4EE', border: '1px solid #B8D4AE', borderRadius: 8, padding: 20, color: '#2D4A27' }}>
-            {data.alt_purchase.length === 0
-              ? 'Brand Analytics alternate purchase data not yet available. This data shows products customers bought instead of BioHuez.'
-              : JSON.stringify(data.alt_purchase.slice(0, 5))}
-          </div>
+          {data.alt_purchase.length === 0 ? (
+            <DataState
+              title="Alternate purchase data is not available yet"
+              description="This section will show products customers bought instead of BioHuez."
+              variant="info"
+            />
+          ) : (
+            <div style={{ background: 'white', borderRadius: 10, padding: 16, color: '#2D4A27' }}>
+              {JSON.stringify(data.alt_purchase.slice(0, 5))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

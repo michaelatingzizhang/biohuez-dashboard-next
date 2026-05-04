@@ -81,3 +81,74 @@
   .bg-blue { background-color: hsl(var(--blue)); }
   .text-blue { color: hsl(var(--blue)); }
 }
+
+@layer components {
+  .dashboard-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .dashboard-kpi-grid-tight {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .dashboard-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .dashboard-mini-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .dashboard-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .dashboard-table-card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-table-card table {
+    min-width: 680px;
+  }
+
+  .dashboard-tabs-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-tabs-scroll > * {
+    min-width: max-content;
+  }
+
+  @media (max-width: 640px) {
+    .dashboard-table-card {
+      padding: 12px;
+      margin-left: -4px;
+      margin-right: -4px;
+    }
+
+    .dashboard-chart-card {
+      padding: 12px !important;
+    }
+  }
+}

@@ -13,7 +13,7 @@ export function LoadingSkeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* KPI ribbon skeleton */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+      <div className="dashboard-kpi-grid-tight">
         {[...Array(5)].map((_, i) => (
           <div key={i} style={{
             background: 'white', borderRadius: 10, padding: '14px 16px',
@@ -40,7 +40,7 @@ export function LoadingSkeleton() {
       </div>
 
       {/* Two chart skeletons side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="dashboard-chart-grid">
         {[0, 1].map(j => (
           <div key={j} style={{ background: 'white', borderRadius: 10, padding: 16, height: 240 }}>
             <div style={{ height: 12, width: '30%', background: '#F0F0F0', borderRadius: 4, marginBottom: 16 }} />

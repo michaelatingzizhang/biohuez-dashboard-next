@@ -1,6 +1,7 @@
 import sys, json, warnings
+from _bootstrap import add_legacy_dashboard_to_path
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/Users/tingzizhang/biohuez-dashboard')
+add_legacy_dashboard_to_path()
 import db
 
 # Map of "canonical label" → actual table name in DB
@@ -17,9 +18,25 @@ TABLE_MAP = [
     ('ba_item_comparison_weekly', 'ba_item_comparison_weekly', 'Item Comparison (BA)'),
 ]
 
-con = db._conn_read()
-actual_tables = con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='main'").df()
-actual_names = set(actual_tables['table_name'].tolist())
+try:
+    con = db._conn_read()
+    actual_tables = con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='main'").df()
+    actual_names = set(actual_tables['table_name'].tolist())
+except Exception as e:
+    results = [
+        {
+            'table': label,
+            'actual_table': tbl,
+            'display_name': display,
+            'status': 'unavailable',
+            'error': str(e),
+            'rows': 0,
+            'last_updated': None
+        }
+        for label, tbl, display in TABLE_MAP
+    ]
+    print(json.dumps({'tables': results, 'total': len(results), 'error': str(e)}))
+    sys.exit(0)
 
 results = []
 for label, tbl, display in TABLE_MAP:
@@ -60,5 +77,8 @@ for label, tbl, display in TABLE_MAP:
             'last_updated': None
         })
 
+last_updated_values = [r['last_updated'] for r in results if r.get('last_updated')]
+last_updated = sorted(last_updated_values, reverse=True)[0] if last_updated_values else None
+
 con.close()
-print(json.dumps({'tables': results, 'total': len(results)}))
+print(json.dumps({'tables': results, 'total': len(results), 'last_updated': last_updated}))

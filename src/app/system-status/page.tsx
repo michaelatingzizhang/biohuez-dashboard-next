@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { SectionHeader } from '@/components/section-header'
+import { DataState } from '@/components/data-state'
 
 interface TableStatus {
   table: string
   actual_table?: string
   display_name: string
-  status: 'ok' | 'error' | 'missing'
+  status: 'ok' | 'error' | 'missing' | 'unavailable'
   rows: number
   last_updated: string | null
   error?: string
@@ -97,6 +98,11 @@ export default function SystemStatusPage() {
       </div>
 
       {loading && <div style={{ padding: 20, color: '#888', textAlign: 'center' }}>Checking database tables...</div>}
+      {!loading && data?.error ? (
+        <div style={{ marginBottom: 16 }}>
+          <DataState variant="error" title="Database connection unavailable" description={data.error} />
+        </div>
+      ) : null}
 
       {/* Table cards */}
       {!loading && (

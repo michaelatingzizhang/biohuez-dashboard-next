@@ -5,11 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Package,
-  ShoppingCart,
   Users,
-  TrendingUp,
-  Settings,
   Bell,
   Menu,
   X,
@@ -25,7 +21,6 @@ import {
   DollarSign,
   Warehouse,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 const navItems = [
   { icon: Home, label: "Summary", href: "/" },
@@ -63,6 +58,7 @@ type TimeRange = typeof TIME_RANGES[number]
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedRange, setSelectedRange] = useState<TimeRange>('All');
+  const [dataLastUpdated, setDataLastUpdated] = useState<string | null>(null);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -70,6 +66,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     if (saved && TIME_RANGES.includes(saved)) {
       setSelectedRange(saved);
     }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/system-status")
+      .then((response) => response.json())
+      .then((data) => {
+        const latest = data?.last_updated || data?.tables
+          ?.map((table: { last_updated?: string | null }) => table.last_updated)
+          .filter(Boolean)
+          .sort()
+          .reverse()?.[0]
+        setDataLastUpdated(latest ? String(latest).slice(0, 10) : null)
+      })
+      .catch(() => setDataLastUpdated(null))
   }, []);
 
   const handleRangeSelect = (range: TimeRange) => {
@@ -215,7 +225,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               border: "1px solid #E8EDE7",
             }}>
               <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#555", marginBottom: 2 }}>Data last updated</div>
-              <div style={{ fontSize: "0.75rem", color: "#888" }}>Today, 8:30 AM ET</div>
+              <div style={{ fontSize: "0.75rem", color: "#888" }}>{dataLastUpdated ?? "Checking..."}</div>
               <button style={{
                 marginTop: 8, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
                 gap: 6, fontSize: "0.75rem", fontWeight: 500, color: "#2D4A27",

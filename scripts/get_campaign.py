@@ -1,6 +1,7 @@
 import sys, json, warnings, math
+from _bootstrap import add_legacy_dashboard_to_path
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/Users/tingzizhang/biohuez-dashboard')
+add_legacy_dashboard_to_path()
 import db
 
 def clean(obj):

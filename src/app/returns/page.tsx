@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
@@ -49,9 +50,21 @@ export default function ReturnsPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return (
+    <DataState
+      title="Returns data could not load"
+      description={data?.error || 'Check the returns export connection and try refreshing this page.'}
+      variant="error"
+    />
+  )
 
   const { returns, reasons, by_sku, units_by_sku, time_series } = data
+  if (returns.length === 0 && reasons.length === 0 && by_sku.length === 0) return (
+    <DataState
+      title="No returns data yet"
+      description="Return rates, reasons, and SKU-level return analysis will appear once FBA returns data is available."
+    />
+  )
 
   const totalReturns = returns.reduce((s, r) => s + (r.quantity || 1), 0)
   const totalUnitsSold = units_by_sku.reduce((s, r) => s + (r.units_sold || 0), 0)
@@ -141,8 +154,8 @@ export default function ReturnsPage() {
           <tbody>
             {by_sku.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: 16, textAlign: 'center', color: '#888' }}>
-                  No per-SKU data available
+                <td colSpan={5} style={{ padding: 16 }}>
+                  <DataState title="No per-SKU return data available" />
                 </td>
               </tr>
             ) : (
@@ -181,17 +194,25 @@ export default function ReturnsPage() {
             </tr>
           </thead>
           <tbody>
-            {returns.slice(-20).reverse().map((row, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #F5F5F5' }}>
-                <td style={{ padding: '6px 10px', color: '#888' }}>{row.date}</td>
-                <td style={{ padding: '6px 10px' }}>{row.sku_name}</td>
-                <td style={{ padding: '6px 10px' }}>{row.quantity}</td>
-                <td style={{ padding: '6px 10px' }}>{row.reason?.replace(/_/g, ' ')}</td>
-                <td style={{ padding: '6px 10px', color: '#888', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(row as unknown as Record<string, string>)['customer_comments'] || '—'}
+            {returns.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: 16 }}>
+                  <DataState title="No return log entries available" />
                 </td>
               </tr>
-            ))}
+            ) : (
+              returns.slice(-20).reverse().map((row, i) => (
+                <tr key={`${row.date}-${row.sku_name}-${row.reason}-${i}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                  <td style={{ padding: '6px 10px', color: '#888' }}>{row.date}</td>
+                  <td style={{ padding: '6px 10px' }}>{row.sku_name}</td>
+                  <td style={{ padding: '6px 10px' }}>{row.quantity}</td>
+                  <td style={{ padding: '6px 10px' }}>{row.reason?.replace(/_/g, ' ')}</td>
+                  <td style={{ padding: '6px 10px', color: '#888', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(row as unknown as Record<string, string>)['customer_comments'] || '—'}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

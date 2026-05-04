@@ -4,6 +4,7 @@ import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
+import { DataState } from '@/components/data-state'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -53,7 +54,7 @@ export default function FinancePage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return <DataState variant="error" title="Finance data could not load" description={data?.error || "The finance endpoint returned no response."} />
 
   const { monthly, settlement } = data
 
@@ -61,7 +62,7 @@ export default function FinancePage() {
     return (
       <div style={{ padding: 40 }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 8, color: '#1A1A1A' }}>Finance</h1>
-        <p style={{ color: '#888' }}>No monthly financial data available yet. Settlement data is required to generate P&L.</p>
+        <DataState title="No monthly financial data available yet" description="Settlement data is required to generate the finance view." />
       </div>
     )
   }
@@ -92,24 +93,24 @@ export default function FinancePage() {
   return (
     <div style={{ paddingBottom: 40 }}>
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Finance</h1>
-      <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>P&L, settlement data, and margin trends (3-month avg)</p>
+      <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Settlement P&L, fee load, and net revenue trends (3-month avg)</p>
 
       {/* KPI Ribbon */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div className="dashboard-kpi-grid">
         <MetricCard label="Avg Gross Sales" value={fmtMoney(avgGrossSales)} sublabel="Last 3 months" />
         <MetricCard label="Avg Net Revenue" value={fmtMoney(avgNetRevenue)} sublabel="Last 3 months" />
-        <MetricCard label="Avg Net Profit" value={fmtMoney(avgGrossProfit)} sublabel="After FBA & fees" />
+        <MetricCard label="Avg Net After Fees" value={fmtMoney(avgGrossProfit)} sublabel="COGS not included" />
         <MetricCard
-          label="Avg Margin"
+          label="Avg Fee-Adjusted Margin"
           value={fmtPct(avgMargin)}
-          sublabel="Net profit / gross sales"
+          sublabel="Before COGS"
           status={avgMargin >= 20 ? 'normal' : avgMargin >= 10 ? 'warn' : 'alert'}
         />
       </div>
 
       {/* P&L Bar Chart */}
-      <SectionHeader title="Monthly P&L Breakdown" subtitle="Gross sales vs fees vs net profit" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+      <SectionHeader title="Monthly P&L Breakdown" subtitle="Gross sales vs Amazon fees, FBA fees, and net after fees" />
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -120,14 +121,14 @@ export default function FinancePage() {
             <Bar dataKey="gross_sales" fill="#B8D4AE" name="Gross Sales" />
             <Bar dataKey="amazon_fees" fill="#E67E22" name="Amazon Fees" />
             <Bar dataKey="fba_fees" fill="#C0392B" name="FBA Fees" />
-            <Bar dataKey="net_profit" fill="#2D4A27" name="Net Profit" />
+            <Bar dataKey="net_profit" fill="#2D4A27" name="Net After Fees" />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
       {/* Margin Trend */}
-      <SectionHeader title="Margin Trend" subtitle="Net margin % over time" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+      <SectionHeader title="Fee-Adjusted Margin Trend" subtitle="Net after fees as a percentage of gross sales" />
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -135,18 +136,18 @@ export default function FinancePage() {
             <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} domain={['auto', 'auto']} />
             <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
             <Legend />
-            <Line type="monotone" dataKey="margin_pct" stroke="#2D4A27" strokeWidth={2.5} dot name="Margin %" connectNulls />
+            <Line type="monotone" dataKey="margin_pct" stroke="#2D4A27" strokeWidth={2.5} dot name="Fee-Adjusted Margin %" connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       {/* Monthly P&L Table */}
       <SectionHeader title="Monthly P&L Table" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+      <div className="dashboard-table-card">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
-              {['Month', 'Gross Sales', 'Amazon Fees', 'FBA Fees', 'Net Revenue', 'Net Profit', 'Margin%'].map(h => (
+              {['Month', 'Gross Sales', 'Amazon Fees', 'FBA Fees', 'Net Revenue', 'Net After Fees', 'Margin%'].map(h => (
                 <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Month' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>{h}</th>
               ))}
             </tr>
@@ -181,11 +182,9 @@ export default function FinancePage() {
       {/* Settlement Summary */}
       <SectionHeader title="Settlement Summary" />
       {(!settlement || settlement.length === 0) ? (
-        <div style={{ background: 'white', borderRadius: 10, padding: 24, color: '#888', textAlign: 'center' }}>
-          Settlement data not available
-        </div>
+        <DataState title="Settlement data not available" description="Monthly rollups are visible, but settlement-level records are not available yet." />
       ) : (
-        <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+        <div className="dashboard-table-card">
           {(() => {
             const allKeys = Array.from(new Set(settlement.flatMap(r => Object.keys(r))))
             const priorityKeys = ['settlement_id', 'start_date', 'end_date', 'currency', 'total_amount', 'net_proceeds', 'deposit_date', 'marketplace']

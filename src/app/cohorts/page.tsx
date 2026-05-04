@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
@@ -63,9 +64,21 @@ export default function CohortsPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return (
+    <DataState
+      title="Cohort data could not load"
+      description={data?.error || 'Check the sales data connection and try refreshing this page.'}
+      variant="error"
+    />
+  )
 
   const { cohorts, cohort_sizes, total_orders } = data
+  if (cohorts.length === 0 && cohort_sizes.length === 0) return (
+    <DataState
+      title="No cohort data yet"
+      description="Cohort retention will appear once enough order history is available."
+    />
+  )
 
   // KPIs
   const validM1 = cohorts.filter(r => r.m1 !== null).map(r => r.m1 as number)

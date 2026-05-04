@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
@@ -35,6 +36,13 @@ interface CampaignData {
   search_terms: SearchTermRow[]
   ads_by_type: unknown[]
   error?: string
+}
+
+function latestPeriod(rows: SearchTermRow[]) {
+  return rows.reduce((latest, row) => {
+    if (!row.period_start) return latest
+    return row.period_start > latest ? row.period_start : latest
+  }, '')
 }
 
 function fmtMoney(n: number | null | undefined) {
@@ -77,9 +85,21 @@ export default function CampaignPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return (
+    <DataState
+      title="Campaign data could not load"
+      description={data?.error || 'Check the data bridge connection and try refreshing this page.'}
+      variant="error"
+    />
+  )
 
   const { ads, search_terms } = data
+  if (ads.length === 0 && search_terms.length === 0) return (
+    <DataState
+      title="No campaign data yet"
+      description="Advertising and search term data will appear here after the campaign exports are available."
+    />
+  )
 
   // Campaign aggregation
   const campaignMap: Record<string, { spend: number; sales: number; orders: number; impressions: number; clicks: number }> = {}
@@ -118,9 +138,14 @@ export default function CampaignPage() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({ date, ...v }))
 
-  // Search terms — aggregate by query
+  const currentSearchPeriod = latestPeriod(search_terms)
+  const currentSearchTerms = currentSearchPeriod
+    ? search_terms.filter(row => row.period_start === currentSearchPeriod)
+    : search_terms
+
+  // Search terms — aggregate by query for the latest reporting period.
   const stMap: Record<string, { impressions: number; clicks: number; purchases: number; tier: string; period: string }> = {}
-  for (const row of search_terms) {
+  for (const row of currentSearchTerms) {
     const k = row.search_query
     if (!stMap[k]) stMap[k] = { impressions: 0, clicks: 0, purchases: 0, tier: row.tier || 'Broad', period: row.period_start }
     stMap[k].impressions += Number(row.impression_total) || 0
@@ -150,13 +175,15 @@ export default function CampaignPage() {
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Advertising performance and search term analysis</p>
 
       <Tabs defaultValue="overview">
-        <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
-          <TabsTrigger value="overview">Campaign Overview</TabsTrigger>
-          <TabsTrigger value="terms">Search Terms</TabsTrigger>
-        </TabsList>
+        <div className="dashboard-tabs-scroll">
+          <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
+            <TabsTrigger value="overview">Campaign Overview</TabsTrigger>
+            <TabsTrigger value="terms">Search Terms</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             <MetricCard label="Total Spend" value={fmtMoney(totalSpend)} />
             <MetricCard label="Ad Sales" value={fmtMoney(totalAdSales)} />
             <MetricCard label="ACOS" value={fmtPct(overallAcos)} status={acosStatus(overallAcos)} />
@@ -167,7 +194,7 @@ export default function CampaignPage() {
 
           {/* Daily spend + sales chart */}
           <SectionHeader title="Daily Spend vs Sales" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={240}>
               <ComposedChart data={dailyChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
@@ -183,7 +210,7 @@ export default function CampaignPage() {
 
           {/* Campaign table */}
           <SectionHeader title="Campaign Performance" subtitle="Sorted by spend" />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+          <div className="dashboard-table-card">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -193,8 +220,8 @@ export default function CampaignPage() {
                 </tr>
               </thead>
               <tbody>
-                {campaigns.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                {campaigns.map((row) => (
+                  <tr key={row.name} style={{ borderBottom: '1px solid #F5F5F5' }}>
                     <td style={{ padding: '8px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</td>
                     <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
                     <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.sales)}</td>
@@ -215,7 +242,7 @@ export default function CampaignPage() {
 
         <TabsContent value="terms">
           {/* Tier KPIs */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div className="dashboard-kpi-grid">
             {['Competitor', 'Niche', 'Specific', 'Broad'].map(tier => {
               const t = tierMap[tier] || { impressions: 0, clicks: 0, queries: 0 }
               return (
@@ -229,8 +256,11 @@ export default function CampaignPage() {
             })}
           </div>
 
-          <SectionHeader title="Search Terms" subtitle={`Top ${terms.length} by impressions`} />
-          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+          <SectionHeader
+            title="Search Terms"
+            subtitle={currentSearchPeriod ? `Top ${terms.length} by impressions for week of ${currentSearchPeriod}` : `Top ${terms.length} by impressions`}
+          />
+          <div className="dashboard-table-card">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #EBEBEB' }}>

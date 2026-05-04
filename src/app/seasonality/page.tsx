@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { SectionHeader } from '@/components/section-header'
@@ -36,9 +37,21 @@ export default function SeasonalityPage() {
   }, [])
 
   if (loading) return <LoadingSkeleton />
-  if (!data || data.error) return <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error}</div>
+  if (!data || data.error) return (
+    <DataState
+      title="Seasonality data could not load"
+      description={data?.error || 'Check the sales data connection and try refreshing this page.'}
+      variant="error"
+    />
+  )
 
   const { day_of_week, month_orders, week_orders, hour_orders } = data
+  if (day_of_week.length === 0 && month_orders.length === 0 && week_orders.length === 0 && hour_orders.length === 0) return (
+    <DataState
+      title="No seasonality data yet"
+      description="Order patterns by day, week, and month will appear once sales history is available."
+    />
+  )
   const hasHours = hour_orders && hour_orders.some(r => r.orders > 0)
 
   // Find peak day

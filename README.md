@@ -7,7 +7,7 @@ A modern, polished Amazon analytics dashboard built with Next.js 15 and shadcn/u
 - **Modern UI**: Clean, professional dashboard with shadcn/ui components
 - **Responsive Design**: Works on desktop, tablet, and mobile
 - **Dark/Light Mode**: Built-in theme support
-- **Real-time Data**: Placeholder for Amazon SP-API integration
+- **Live Data Bridge**: Next.js API routes reuse the existing Python/MotherDuck data layer
 - **Multi-page Navigation**: Sidebar with all dashboard sections
 - **Interactive Components**: Charts, tables, metrics cards
 
@@ -26,6 +26,23 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### 3. Connect the Python data bridge
+
+The Next.js API routes reuse the existing Streamlit dashboard data layer. By default, the app expects the legacy dashboard to be a sibling folder:
+
+```bash
+../biohuez-dashboard
+```
+
+If your folder layout is different, create `.env.local` from `.env.example` and set:
+
+```bash
+BIOHUEZ_LEGACY_DASHBOARD_DIR=/absolute/path/to/biohuez-dashboard
+BIOHUEZ_PYTHON=/absolute/path/to/biohuez-dashboard/venv/bin/python3
+```
+
+For cloud data, also set `MOTHERDUCK_TOKEN` so the Python scripts can read MotherDuck instead of a local `biohuez.db`.
 
 ## Project Structure
 
@@ -48,28 +65,37 @@ src/
 
 The dashboard includes navigation for:
 
-- **Overview** - Key metrics and charts
-- **Sales** - Revenue and units analytics
-- **Finance** - P&L, fees, margins
-- **Inventory** - Stock levels and alerts
-- **Orders** - Order management
-- **Customers** - Customer analytics
-- **Advertising** - Ad performance (ACOS, ROAS)
-- **Settings** - Account and preferences
+- **Overview** - Key metrics, sales trends, and inventory snapshot
+- **Sales** - Revenue, traffic, BSR, ads, unit economics, and customer journey
+- **Finance** - Settlement rollups, fees, net revenue, and margin trends
+- **Geography** - Regional sales analysis
+- **Returns** - FBA return rates, reasons, and SKU impact
+- **Inventory** - Coverage, velocity, aging, FC distribution, and receipt events
+- **Demographics** - Repeat purchase and customer mix analysis
+- **Campaign** - Ad performance and latest-period search term analysis
+- **Cohorts** - Retention proxy by cohort month
+- **Competitor** - BSR comparison, scraped ratings, and Brand Analytics comparison sections
+- **Seasonality** - Order patterns by day, week, month, and hour
 
-## Connecting to Amazon SP-API
+## Data Bridge
 
-This is a frontend template. To connect to your actual Amazon data:
+The dashboard currently reads Amazon analytics data through the legacy Python dashboard data layer. Next.js API routes call scripts in `scripts/get_*.py`, and those scripts import the sibling `biohuez-dashboard` project through `scripts/_bootstrap.py`.
 
-1. **Backend API**: Create a FastAPI/Express backend that connects to your DuckDB/MotherDuck database
-2. **API Routes**: Add Next.js API routes in `src/app/api/`
-3. **Data Fetching**: Replace placeholder data with real API calls
+Use `.env.local` to point the app at the legacy dashboard and Python executable when the default sibling-folder layout is not used.
 
-Example API route structure:
-- `/api/sales` - Get sales data
-- `/api/inventory` - Get inventory levels
-- `/api/orders` - Get recent orders
-- `/api/metrics` - Get KPI metrics
+Available API routes:
+- `/api/summary`
+- `/api/sales`
+- `/api/finance`
+- `/api/geography`
+- `/api/returns`
+- `/api/inventory`
+- `/api/demographics`
+- `/api/campaign`
+- `/api/cohorts`
+- `/api/competitor`
+- `/api/seasonality`
+- `/api/system-status`
 
 ## Customization
 
@@ -112,12 +138,11 @@ CMD ["npm", "start"]
 
 ## Next Steps
 
-1. **Connect to Backend**: Replace placeholder data with real API calls
-2. **Add Authentication**: Implement user login and multi-tenant support
-3. **Add Charts**: Integrate Recharts or Tremor for data visualization
-4. **Add Real-time Updates**: Implement WebSocket or polling for live data
-5. **Add Export Features**: CSV/PDF export for reports
-6. **Add Notifications**: Alert system for low inventory, sales spikes, etc.
+1. **Route QA**: Smoke test each dashboard page against the deployed data source
+2. **Authentication**: Add user login and tenant separation if this becomes customer-facing
+3. **Exports**: Add CSV/PDF export for reports
+4. **Alerts**: Add low-inventory, sales spike, and campaign efficiency notifications
+5. **Automation**: Schedule data refreshes and surface last-refresh metadata on each page
 
 ## License
 

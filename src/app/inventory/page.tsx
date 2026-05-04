@@ -1,5 +1,6 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
+import { DataState } from '@/components/data-state'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
@@ -152,7 +153,11 @@ export default function InventoryPage() {
 
   if (loading) return <LoadingSkeleton />
   if (!data || data.error) return (
-    <div style={{ padding: 40, color: '#C0392B' }}>Error: {data?.error || 'Failed to load inventory data'}</div>
+    <DataState
+      title="Inventory data could not load"
+      description={data?.error || 'Check the inventory data connection and try refreshing this page.'}
+      variant="error"
+    />
   )
 
   const planning = data.inventory_planning || []
@@ -160,6 +165,12 @@ export default function InventoryPage() {
   const ledgerMonthly = data.ledger_monthly || []
   const fcDist = data.fc_distribution || []
   const receipts = data.receipt_events || []
+  if (planning.length === 0 && restock.length === 0 && ledgerMonthly.length === 0 && fcDist.length === 0) return (
+    <DataState
+      title="No inventory data yet"
+      description="Coverage, restock, ledger, and fulfillment center data will appear once inventory exports are available."
+    />
+  )
 
   // ── KPI Summary ────────────────────────────────────────────────────────────
   const totalAvailable = planning.reduce((s, r) => s + (r.available || 0), 0)
@@ -240,9 +251,9 @@ export default function InventoryPage() {
     .slice(0, 30)
 
   return (
-    <div style={{ paddingBottom: 40 }}>
+      <div style={{ paddingBottom: 40 }}>
       {/* KPI Ribbon */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div className="dashboard-kpi-grid">
         <MetricCard label="Total Available" value={totalAvailable.toLocaleString()} sublabel="Units at FBA" />
         <MetricCard label="Avg Days of Supply" value={`${avgDOS}d`} sublabel="Across all SKUs"
           status={avgDOS < 30 ? 'alert' : avgDOS < 60 ? 'warn' : 'normal'} />
@@ -252,7 +263,7 @@ export default function InventoryPage() {
 
       {/* SKU Coverage Cards */}
       <SectionHeader title="Inventory Coverage by SKU" subtitle="Days of supply, velocity, and health status" />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div className="dashboard-card-grid">
         {planning.map(r => {
           const dos = r.total_days_of_supply || r.days_of_supply || 0
           const status = coverageStatus(dos)
@@ -325,9 +336,9 @@ export default function InventoryPage() {
 
       {/* Velocity Table */}
       <SectionHeader title="Sales Velocity by SKU" subtitle="Units shipped over 7/30/60/90 day windows" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20, overflowX: 'auto' }}>
+      <div className="dashboard-table-card" style={{ marginBottom: 20 }}>
         {coverageData.length === 0 ? (
-          <p style={{ color: '#888', textAlign: 'center' }}>No velocity data</p>
+          <DataState title="No velocity data available" />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
             <thead>
@@ -357,7 +368,7 @@ export default function InventoryPage() {
 
       {/* Inventory Aging */}
       <SectionHeader title="Inventory Aging" subtitle="Units by age bucket — older inventory risks long-term storage fees" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
         {agingData.length === 0 ? (
           <p style={{ color: '#888', textAlign: 'center' }}>No aging data</p>
         ) : (
@@ -381,7 +392,7 @@ export default function InventoryPage() {
             </ResponsiveContainer>
 
             {/* Aging table */}
-            <div style={{ marginTop: 16, overflowX: 'auto' }}>
+            <div className="dashboard-table-card" style={{ marginTop: 16 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -421,7 +432,7 @@ export default function InventoryPage() {
 
       {/* Inventory Movement History */}
       <SectionHeader title="Inventory Movement History" subtitle="Monthly balance changes by SKU (FBA sellable)" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
         {ledgerTrend.length === 0 ? (
           <p style={{ color: '#888', textAlign: 'center' }}>No ledger data</p>
         ) : (
@@ -449,7 +460,7 @@ export default function InventoryPage() {
             </ResponsiveContainer>
 
             {/* Monthly movement table */}
-            <div style={{ marginTop: 16, overflowX: 'auto' }}>
+            <div className="dashboard-table-card" style={{ marginTop: 16 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -484,7 +495,7 @@ export default function InventoryPage() {
 
       {/* FC Distribution */}
       <SectionHeader title="Where Inventory Sits" subtitle="Units by Amazon fulfillment center (sellable disposition)" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
         {fcChartData.length === 0 ? (
           <p style={{ color: '#888', textAlign: 'center' }}>No FC distribution data</p>
         ) : (
@@ -503,7 +514,7 @@ export default function InventoryPage() {
             </ResponsiveContainer>
 
             {/* FC table */}
-            <div style={{ marginTop: 16, overflowX: 'auto' }}>
+            <div className="dashboard-table-card" style={{ marginTop: 16 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
@@ -533,7 +544,7 @@ export default function InventoryPage() {
 
       {/* Shipment Receipt History */}
       <SectionHeader title="Shipment / Receipt History" subtitle="Recent inbound inventory events at FBA" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20, overflowX: 'auto' }}>
+      <div className="dashboard-table-card" style={{ marginBottom: 20 }}>
         {recentReceipts.length === 0 ? (
           <p style={{ color: '#888', textAlign: 'center' }}>No shipment receipt data</p>
         ) : (
