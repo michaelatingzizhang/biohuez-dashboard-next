@@ -4,7 +4,11 @@ warnings.filterwarnings('ignore')
 add_legacy_dashboard_to_path()
 import db
 
-result = {'sales': [], 'inventory': [], 'meta': {'last_updated': None, 'sales_last_date': None, 'inventory_last_fetched_at': None}}
+result = {
+    'sales': [],
+    'inventory': [],
+    'meta': {'last_updated': None, 'sales_last_date': None, 'inventory_last_fetched_at': None},
+}
 
 try:
     sales = db.get_sales_traffic()

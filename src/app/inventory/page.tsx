@@ -4,6 +4,8 @@ import { DataState } from '@/components/data-state'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
+import { SignalGrid } from '@/components/insight-card'
+import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -98,6 +100,72 @@ interface ReceiptEvent {
   fulfillment_center: string
 }
 
+interface InventorySignal {
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface SkuRiskRow {
+  sku: string
+  asin: string
+  product_name: string
+  risk_score: number
+  status: 'Healthy' | 'Watch' | 'Critical'
+  recommended_action: string
+  drivers: string[]
+  available: number
+  inbound: number
+  days_of_supply: number
+  units_shipped_t30: number
+  daily_velocity: number
+  old_units: number
+  old_pct: number
+  unfulfillable: number
+  reserved: number
+  storage_cost_next_month: number
+  recommended_replenishment_qty: number
+}
+
+interface FcConcentrationRow {
+  fulfillment_center: string
+  total_units: number
+  sku_count: number
+  pct_of_inventory: number
+}
+
+interface MovementAnomalyRow {
+  sku: string
+  month: string
+  shipped_units: number
+  received_units: number
+  ending_balance: number
+  balance_delta: number | null
+  lost_units: number
+  damaged_units: number
+  disposed_units: number
+}
+
+interface InventoryInsights {
+  summary: {
+    sku_count?: number
+    critical_count?: number
+    watch_count?: number
+    excess_count?: number
+    total_available?: number
+    total_inbound?: number
+    total_storage_cost_next_month?: number
+    aging_units_181_plus?: number
+    avg_days_of_supply?: number | null
+  }
+  sku_risks: SkuRiskRow[]
+  signals: InventorySignal[]
+  restock_priorities: SkuRiskRow[]
+  aging_exposure: SkuRiskRow[]
+  fc_concentration: FcConcentrationRow[]
+  movement_anomalies: MovementAnomalyRow[]
+}
+
 interface InventoryData {
   inventory_planning: PlanningRow[]
   restock: RestockRow[]
@@ -106,6 +174,7 @@ interface InventoryData {
   fc_distribution: FCRow[]
   receipt_events: ReceiptEvent[]
   event_summary: { event_type: string; msku: string; quantity: number }[]
+  insights?: InventoryInsights
   error?: string
 }
 
@@ -133,6 +202,28 @@ function coverageStatus(days: number | null): { label: string; color: string; bg
   return { label: 'Excess', color: '#1565C0', bg: '#E3F0FD' }
 }
 
+function riskColor(status: SkuRiskRow['status']) {
+  if (status === 'Critical') return '#C0392B'
+  if (status === 'Watch') return '#E67E22'
+  return '#2D4A27'
+}
+
+function riskBg(status: SkuRiskRow['status']) {
+  if (status === 'Critical') return '#FDECEA'
+  if (status === 'Watch') return '#FFF8E1'
+  return '#EEF6EC'
+}
+
+function fmtNum(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })
+}
+
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toFixed(1) + '%'
+}
+
 const SKU_COLORS: Record<string, string> = {
   'ZH-FH-1B': '#1A1A1A',
   'ZH-FH-3C': '#8B4513',
@@ -143,6 +234,7 @@ const SKU_COLORS: Record<string, string> = {
 export default function InventoryPage() {
   const [data, setData] = useState<InventoryData | null>(null)
   const [loading, setLoading] = useState(true)
+  const filters = useDashboardFilters()
 
   useEffect(() => {
     fetch('/api/inventory')
@@ -160,11 +252,38 @@ export default function InventoryPage() {
     />
   )
 
-  const planning = data.inventory_planning || []
-  const restock = data.restock || []
-  const ledgerMonthly = data.ledger_monthly || []
-  const fcDist = data.fc_distribution || []
-  const receipts = data.receipt_events || []
+  const planning = filterByDashboardState(data.inventory_planning || [], filters, row => row.snapshot_date, row => row.sku)
+  const restock = filterByDashboardState(data.restock || [], filters, undefined, row => row.merchant_sku)
+  const ledgerMonthly = filterByDashboardState(data.ledger_monthly || [], filters, row => `${String(row.month).slice(0, 7)}-01`, row => row.msku)
+  const fcDist = filterByDashboardState(data.fc_distribution || [], filters, undefined, row => row.msku)
+  const receipts = filterByDashboardState(data.receipt_events || [], filters, row => row.date, row => row.msku)
+  const baseInsights = data.insights || {
+    summary: {},
+    sku_risks: [],
+    signals: [],
+    restock_priorities: [],
+    aging_exposure: [],
+    fc_concentration: [],
+    movement_anomalies: [],
+  }
+  const filteredSkuRisks = filterByDashboardState(baseInsights.sku_risks, filters, undefined, row => row.sku)
+  const insights = {
+    ...baseInsights,
+    summary: {
+      ...baseInsights.summary,
+      critical_count: filteredSkuRisks.filter(row => row.status === 'Critical').length,
+      watch_count: filteredSkuRisks.filter(row => row.status === 'Watch').length,
+      excess_count: filteredSkuRisks.filter(row => row.days_of_supply > 180).length,
+      aging_units_181_plus: filteredSkuRisks.reduce((sum, row) => sum + (row.old_units || 0), 0),
+      avg_days_of_supply: filteredSkuRisks.length > 0
+        ? filteredSkuRisks.reduce((sum, row) => sum + (row.days_of_supply || 0), 0) / filteredSkuRisks.length
+        : baseInsights.summary.avg_days_of_supply,
+    },
+    sku_risks: filteredSkuRisks,
+    restock_priorities: filterByDashboardState(baseInsights.restock_priorities, filters, undefined, row => row.sku),
+    aging_exposure: filterByDashboardState(baseInsights.aging_exposure, filters, undefined, row => row.sku),
+    movement_anomalies: filterByDashboardState(baseInsights.movement_anomalies, filters, row => `${String(row.month).slice(0, 7)}-01`, row => row.sku),
+  }
   if (planning.length === 0 && restock.length === 0 && ledgerMonthly.length === 0 && fcDist.length === 0) return (
     <DataState
       title="No inventory data yet"
@@ -259,6 +378,130 @@ export default function InventoryPage() {
           status={avgDOS < 30 ? 'alert' : avgDOS < 60 ? 'warn' : 'normal'} />
         <MetricCard label="Inbound Units" value={totalInbound.toLocaleString()} sublabel="En route to FBA" />
         <MetricCard label="Est. Storage Cost" value={`$${totalStorageCost.toFixed(0)}`} sublabel="Next month" />
+      </div>
+
+      <SectionHeader title="Operations Intelligence" subtitle="Stock risk, aging exposure, replenishment urgency, and fulfillment concentration" />
+      <div className="dashboard-kpi-grid">
+        <MetricCard
+          label="Critical SKUs"
+          value={String(insights.summary.critical_count ?? 0)}
+          sublabel={`${insights.summary.watch_count ?? 0} watchlist`}
+          status={(insights.summary.critical_count ?? 0) > 0 ? 'alert' : (insights.summary.watch_count ?? 0) > 0 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Excess Coverage"
+          value={String(insights.summary.excess_count ?? 0)}
+          sublabel="SKUs above 180d supply"
+          status={(insights.summary.excess_count ?? 0) > 0 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Aging Units"
+          value={fmtNum(insights.summary.aging_units_181_plus)}
+          sublabel="181+ days old"
+          status={(insights.summary.aging_units_181_plus ?? 0) > 0 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Avg Supply"
+          value={insights.summary.avg_days_of_supply ? `${Math.round(insights.summary.avg_days_of_supply)}d` : `${avgDOS}d`}
+          sublabel="Risk-scored coverage"
+          status={(insights.summary.avg_days_of_supply ?? avgDOS) > 180 ? 'warn' : (insights.summary.avg_days_of_supply ?? avgDOS) < 60 ? 'warn' : 'normal'}
+        />
+      </div>
+
+      <SignalGrid signals={insights.signals} />
+
+      {insights.sku_risks.length > 0 && (
+        <>
+          <SectionHeader title="SKU Risk Scores" subtitle="Combined stockout, excess, aging, storage, and restock signals" />
+          <div className="dashboard-table-card" style={{ marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['SKU', 'Status', 'Risk', 'Available', 'DOS', 'Velocity', 'Old Units', 'Action', 'Drivers'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: ['Available', 'DOS', 'Velocity', 'Old Units', 'Risk'].includes(h) ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.sku_risks.map(row => {
+                  const color = riskColor(row.status)
+                  return (
+                    <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                      <td style={{ padding: '8px 8px', fontWeight: 700 }}>{shortSku(row.sku)}</td>
+                      <td style={{ padding: '8px 8px' }}>
+                        <span style={{ background: riskBg(row.status), color, border: `1px solid ${color}33`, borderRadius: 4, padding: '2px 8px', fontWeight: 700, fontSize: '0.72rem' }}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 800 }}>{row.risk_score}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.available)}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{Math.round(row.days_of_supply)}d</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.daily_velocity.toFixed(1)}/d</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color: row.old_units > 0 ? '#E67E22' : '#444' }}>{fmtNum(row.old_units)}</td>
+                      <td style={{ padding: '8px 8px', color: '#1A1A1A', fontWeight: 600 }}>{row.recommended_action}</td>
+                      <td style={{ padding: '8px 8px', color: '#666', fontSize: '0.72rem' }}>{row.drivers.join(', ') || 'Stable'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div>
+          <SectionHeader title="FC Concentration" subtitle="Where sellable units are concentrated" />
+          <div className="dashboard-table-card">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['FC', 'Units', 'SKUs', '% Inv.'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'FC' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.fc_concentration.slice(0, 8).map(row => (
+                  <tr key={row.fulfillment_center} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontFamily: 'monospace', fontWeight: 700 }}>{row.fulfillment_center}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.total_units)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.sku_count}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.pct_of_inventory)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <SectionHeader title="Movement Watchlist" subtitle="Latest balance movement by SKU" />
+          <div className="dashboard-table-card">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['SKU', 'Month', 'Shipped', 'Received', 'Balance Δ'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'SKU' || h === 'Month' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.movement_anomalies.slice(0, 8).map(row => (
+                  <tr key={`${row.sku}-${row.month}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontWeight: 700 }}>{shortSku(row.sku)}</td>
+                    <td style={{ padding: '8px 8px' }}>{row.month}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.shipped_units)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.received_units)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: (row.balance_delta ?? 0) < 0 ? '#C0392B' : '#2D4A27', fontWeight: 700 }}>
+                      {row.balance_delta == null ? '—' : `${row.balance_delta > 0 ? '+' : ''}${fmtNum(row.balance_delta)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* SKU Coverage Cards */}

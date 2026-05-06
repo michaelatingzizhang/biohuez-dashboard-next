@@ -7,6 +7,7 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface AdsRow {
@@ -31,10 +32,76 @@ interface SearchTermRow {
   period_start: string
 }
 
+interface CampaignActionRow {
+  campaign_name: string
+  action: 'scale' | 'reduce' | 'monitor'
+  reason: string
+  spend: number
+  sales: number
+  purchases: number
+  roas: number
+  acos: number | null
+  ctr: number
+  cvr: number
+}
+
+interface TierPerformanceRow {
+  tier: string
+  queries: number
+  impressions: number
+  clicks: number
+  purchases: number
+  ctr: number
+  conversion_rate: number
+}
+
+interface WinningTermRow {
+  search_query: string
+  tier: string
+  impressions: number
+  clicks: number
+  purchases: number
+  cart_adds: number
+  purchase_share: number
+  ctr: number
+  conversion_rate: number
+}
+
+interface ClusterOpportunityRow {
+  shade_cluster?: string
+  keyword_cluster?: string
+  tier?: string
+  queries: number
+  impressions: number
+  clicks: number
+  purchases: number
+  cart_adds: number
+  ctr: number
+  conversion_rate: number
+}
+
+interface CampaignInsights {
+  summary: {
+    campaign_count?: number
+    total_spend?: number
+    total_sales?: number
+    overall_roas?: number
+    overall_acos?: number | null
+    latest_search_period?: string | null
+    search_terms_in_period?: number
+  }
+  campaign_actions: CampaignActionRow[]
+  tier_performance: TierPerformanceRow[]
+  winning_terms: WinningTermRow[]
+  wasted_terms: WinningTermRow[]
+  cluster_opportunities: ClusterOpportunityRow[]
+}
+
 interface CampaignData {
   ads: AdsRow[]
   search_terms: SearchTermRow[]
   ads_by_type: unknown[]
+  insights?: CampaignInsights
   error?: string
 }
 
@@ -61,6 +128,10 @@ const TIER_COLORS: Record<string, string> = {
   Broad: '#888',
 }
 
+function tierColor(tier: string | undefined) {
+  return tier ? TIER_COLORS[tier] || '#666' : '#666'
+}
+
 function acosStatus(acos: number): 'normal' | 'warn' | 'alert' {
   if (acos < 25) return 'normal'
   if (acos <= 40) return 'warn'
@@ -73,9 +144,21 @@ function acosColor(acos: number) {
   return '#C0392B'
 }
 
+function actionMeta(action: CampaignActionRow['action']) {
+  if (action === 'scale') return { label: 'Scale', color: '#2D4A27', bg: '#EEF6EC' }
+  if (action === 'reduce') return { label: 'Reduce', color: '#C0392B', bg: '#FDECEA' }
+  return { label: 'Monitor', color: '#8B6914', bg: '#FFF8E1' }
+}
+
+function fmtInt(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toLocaleString()
+}
+
 export default function CampaignPage() {
   const [data, setData] = useState<CampaignData | null>(null)
   const [loading, setLoading] = useState(true)
+  const filters = useDashboardFilters()
 
   useEffect(() => {
     fetch('/api/campaign')
@@ -93,7 +176,8 @@ export default function CampaignPage() {
     />
   )
 
-  const { ads, search_terms } = data
+  const ads = filterByDashboardState(data.ads || [], filters, row => row.date)
+  const search_terms = filterByDashboardState(data.search_terms || [], filters, row => row.period_start)
   if (ads.length === 0 && search_terms.length === 0) return (
     <DataState
       title="No campaign data yet"
@@ -125,6 +209,14 @@ export default function CampaignPage() {
   const totalImpressions = campaigns.reduce((s, r) => s + r.impressions, 0)
   const overallAcos = totalAdSales > 0 ? totalSpend / totalAdSales * 100 : 0
   const overallRoas = totalSpend > 0 ? totalAdSales / totalSpend : 0
+  const insights = data.insights || {
+    summary: {},
+    campaign_actions: [],
+    tier_performance: [],
+    winning_terms: [],
+    wasted_terms: [],
+    cluster_opportunities: [],
+  }
 
   // Daily chart
   const dailyMap: Record<string, { spend: number; sales: number }> = {}
@@ -179,6 +271,7 @@ export default function CampaignPage() {
           <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
             <TabsTrigger value="overview">Campaign Overview</TabsTrigger>
             <TabsTrigger value="terms">Search Terms</TabsTrigger>
+            <TabsTrigger value="signals">Optimization Signals</TabsTrigger>
           </TabsList>
         </div>
 
@@ -276,9 +369,9 @@ export default function CampaignPage() {
                     <td style={{ padding: '8px 8px' }}>
                       <Badge
                         style={{
-                          background: TIER_COLORS[row.tier] + '22',
-                          color: TIER_COLORS[row.tier],
-                          border: '1px solid ' + TIER_COLORS[row.tier] + '44',
+                          background: tierColor(row.tier) + '22',
+                          color: tierColor(row.tier),
+                          border: '1px solid ' + tierColor(row.tier) + '44',
                           fontWeight: 600,
                         }}
                       >
@@ -294,6 +387,172 @@ export default function CampaignPage() {
               </tbody>
             </table>
           </div>
+        </TabsContent>
+
+        <TabsContent value="signals">
+          <div className="dashboard-kpi-grid">
+            <MetricCard
+              label="Overall ROAS"
+              value={(insights.summary.overall_roas ?? overallRoas).toFixed(2) + 'x'}
+              sublabel="Campaign efficiency"
+              status={(insights.summary.overall_roas ?? overallRoas) < 2 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Overall ACOS"
+              value={fmtPct(insights.summary.overall_acos ?? overallAcos)}
+              sublabel="Spend / ad sales"
+              status={acosStatus(insights.summary.overall_acos ?? overallAcos)}
+            />
+            <MetricCard
+              label="Latest Search Period"
+              value={insights.summary.latest_search_period?.slice(0, 10) || '—'}
+              sublabel={`${fmtInt(insights.summary.search_terms_in_period)} terms analyzed`}
+            />
+            <MetricCard
+              label="Action Candidates"
+              value={String(insights.campaign_actions.length)}
+              sublabel="Scale, reduce, or monitor"
+            />
+          </div>
+
+          <SectionHeader title="Campaign Action Candidates" subtitle="Heuristic recommendations from ROAS, ACOS, spend, and conversions" />
+          {insights.campaign_actions.length === 0 ? (
+            <DataState title="No campaign action candidates yet" description="More campaign performance history is needed before recommendations can be generated." variant="info" />
+          ) : (
+            <div className="dashboard-table-card" style={{ marginBottom: 20 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                    {['Action', 'Campaign', 'Spend', 'Sales', 'ROAS', 'ACOS', 'CVR', 'Reason'].map(h => (
+                      <th key={h} style={{ padding: '8px 8px', textAlign: ['Spend', 'Sales', 'ROAS', 'ACOS', 'CVR'].includes(h) ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {insights.campaign_actions.map((row) => {
+                    const meta = actionMeta(row.action)
+                    return (
+                      <tr key={`${row.action}-${row.campaign_name}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px' }}>
+                          <span style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33`, borderRadius: 4, padding: '2px 8px', fontWeight: 700, fontSize: '0.72rem' }}>
+                            {meta.label}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 8px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.campaign_name}>{row.campaign_name}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.sales)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.roas.toFixed(2)}x</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right', color: acosColor(row.acos ?? 0), fontWeight: 600 }}>{fmtPct(row.acos)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.cvr)}</td>
+                        <td style={{ padding: '8px 8px', color: '#666' }}>{row.reason}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+            <div>
+              <SectionHeader title="Winning Search Terms" subtitle="Purchasing or high-intent terms from latest period" />
+              <div className="dashboard-table-card">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['Term', 'Tier', 'Clicks', 'Purch.', 'CVR'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Term' || h === 'Tier' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.68rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.winning_terms.slice(0, 8).map((row) => (
+                      <tr key={`${row.search_query}-${row.tier}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.search_query}>{row.search_query}</td>
+                        <td style={{ padding: '8px 8px', color: tierColor(row.tier), fontWeight: 600 }}>{row.tier || '—'}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.clicks)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.purchases)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.conversion_rate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <SectionHeader title="Wasted Search Terms" subtitle="Clicks with no purchases or cart adds" />
+              <div className="dashboard-table-card">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['Term', 'Tier', 'Impr.', 'Clicks', 'CTR'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Term' || h === 'Tier' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.68rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.wasted_terms.slice(0, 8).map((row) => (
+                      <tr key={`${row.search_query}-${row.tier}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.search_query}>{row.search_query}</td>
+                        <td style={{ padding: '8px 8px', color: tierColor(row.tier), fontWeight: 600 }}>{row.tier || '—'}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.impressions)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.clicks)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.ctr)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <SectionHeader title="Tier Performance" subtitle="Latest search period by query intent tier" />
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={insights.tier_performance}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="tier" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="volume" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="rate" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
+                <Tooltip formatter={(value: unknown, name: unknown) => String(name).includes('Rate') || String(name).includes('CTR') ? Number(value).toFixed(1) + '%' : fmtInt(Number(value))} />
+                <Legend />
+                <Bar yAxisId="volume" dataKey="purchases" fill="#2D4A27" name="Purchases" />
+                <Bar yAxisId="volume" dataKey="clicks" fill="#B8D4AE" name="Clicks" />
+                <Line yAxisId="rate" type="monotone" dataKey="conversion_rate" stroke="#C0392B" strokeWidth={2} name="Conversion Rate %" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {insights.cluster_opportunities.length > 0 && (
+            <>
+              <SectionHeader title="Cluster Opportunities" subtitle="Shade and keyword clusters with the strongest current demand signals" />
+              <div className="dashboard-table-card">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['Shade', 'Keyword Cluster', 'Tier', 'Queries', 'Clicks', 'Purchases', 'CVR'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: ['Queries', 'Clicks', 'Purchases', 'CVR'].includes(h) ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.cluster_opportunities.map((row, index) => (
+                      <tr key={`${row.shade_cluster}-${row.keyword_cluster}-${row.tier}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px' }}>{row.shade_cluster || '—'}</td>
+                        <td style={{ padding: '8px 8px' }}>{row.keyword_cluster || '—'}</td>
+                        <td style={{ padding: '8px 8px', color: tierColor(row.tier), fontWeight: 600 }}>{row.tier || '—'}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.queries)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.clicks)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtInt(row.purchases)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.conversion_rate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>

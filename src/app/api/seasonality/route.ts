@@ -1,13 +1,7 @@
-import { NextResponse } from 'next/server'
-import { runPythonJsonScript } from '@/lib/python-runner'
+import { dashboardApiResponse } from '@/lib/dashboard-api'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  try {
-    return NextResponse.json(runPythonJsonScript('get_seasonality.py'))
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return NextResponse.json({ error: msg }, { status: 200 })
-  }
+  return dashboardApiResponse('get_seasonality.py')
 }

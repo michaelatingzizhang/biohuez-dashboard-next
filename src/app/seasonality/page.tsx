@@ -4,6 +4,8 @@ import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
 import { SectionHeader } from '@/components/section-header'
+import { MetricCard } from '@/components/metric-card'
+import { SignalGrid } from '@/components/insight-card'
 import { BarChart, Bar, ComposedChart, Area, Line, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface DowRow { day: string; orders: number; revenue: number }
@@ -11,12 +13,70 @@ interface MonthRow { month: string; orders: number; revenue: number }
 interface WeekRow { week: string; orders: number; revenue: number }
 interface HourRow { hour: number; orders: number }
 
+interface SeasonalitySignal {
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface ForecastRow {
+  week: string
+  forecast_orders: number
+  forecast_revenue: number
+  confidence: 'low' | 'medium' | 'high'
+}
+
+interface WeeklyMomentumRow {
+  week: string
+  orders: number
+  revenue: number
+  orders_4w_avg: number
+  revenue_4w_avg: number
+  orders_wow_pct: number | null
+  revenue_wow_pct: number | null
+}
+
+interface PeriodRow {
+  period_type: string
+  period: string
+  orders: number
+  revenue: number
+}
+
+interface SeasonalityInsights {
+  summary: {
+    latest_week?: string
+    latest_orders?: number
+    latest_revenue?: number
+    latest_orders_wow_pct?: number | null
+    latest_revenue_wow_pct?: number | null
+    last4_avg_orders?: number
+    prior4_avg_orders?: number
+    last4_vs_prior4_pct?: number | null
+    last4_order_volatility_pct?: number
+    peak_day?: string
+    peak_day_index?: number
+    slow_day?: string
+    slow_day_index?: number
+    peak_month?: string
+    peak_month_index?: number
+    slow_month?: string
+    slow_month_index?: number
+  }
+  signals: SeasonalitySignal[]
+  forecast: ForecastRow[]
+  weekly_momentum: WeeklyMomentumRow[]
+  peak_periods: PeriodRow[]
+  slow_periods: PeriodRow[]
+}
+
 interface SeasonalityData {
   day_of_week: DowRow[]
   month_orders: MonthRow[]
   week_orders: WeekRow[]
   hour_orders: HourRow[]
   monthly_revenue?: MonthRow[]
+  insights?: SeasonalityInsights
   error?: string
 }
 
@@ -24,7 +84,15 @@ function fmtMoney(n: number | null | undefined) {
   if (n == null) return '—'
   return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
-
+function fmtNum(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = Number(n) > 0 ? '+' : ''
+  return sign + Number(n).toFixed(1) + '%'
+}
 export default function SeasonalityPage() {
   const [data, setData] = useState<SeasonalityData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,6 +114,14 @@ export default function SeasonalityPage() {
   )
 
   const { day_of_week, month_orders, week_orders, hour_orders } = data
+  const insights = data.insights || {
+    summary: {},
+    signals: [],
+    forecast: [],
+    weekly_momentum: [],
+    peak_periods: [],
+    slow_periods: [],
+  }
   if (day_of_week.length === 0 && month_orders.length === 0 && week_orders.length === 0 && hour_orders.length === 0) return (
     <DataState
       title="No seasonality data yet"
@@ -83,6 +159,126 @@ export default function SeasonalityPage() {
           <div style={{ fontSize: '0.7rem', color: '#aaa' }}>across all periods</div>
         </div>
       </div>
+
+      <SectionHeader title="Forecast Signals" subtitle="Near-term demand outlook from weekly order history" />
+      <div className="dashboard-kpi-grid">
+        <MetricCard
+          label="Latest Week"
+          value={fmtNum(insights.summary.latest_orders)}
+          sublabel={insights.summary.latest_week || 'Orders'}
+        />
+        <MetricCard
+          label="Orders WoW"
+          value={fmtPct(insights.summary.latest_orders_wow_pct)}
+          sublabel="Latest week"
+          status={(insights.summary.latest_orders_wow_pct ?? 0) < -20 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="4W Demand"
+          value={fmtPct(insights.summary.last4_vs_prior4_pct)}
+          sublabel="vs prior 4 weeks"
+          status={(insights.summary.last4_vs_prior4_pct ?? 0) < -20 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Volatility"
+          value={fmtPct(insights.summary.last4_order_volatility_pct)}
+          sublabel="Last 4 weeks"
+          status={(insights.summary.last4_order_volatility_pct ?? 0) > 35 ? 'warn' : 'normal'}
+        />
+      </div>
+
+      <SignalGrid signals={insights.signals} />
+
+      {insights.forecast.length > 0 && (
+        <>
+          <SectionHeader title="4-Week Order Forecast" subtitle="Simple momentum-adjusted forecast from recent demand" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={insights.forecast}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="week" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
+                <YAxis yAxisId="orders" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="revenue" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'k'} />
+                <Tooltip formatter={(value: unknown, name: unknown) => String(name).includes('Revenue') ? fmtMoney(Number(value)) : Number(value).toFixed(1)} />
+                <Legend />
+                <Bar yAxisId="orders" dataKey="forecast_orders" fill="#B8D4AE" name="Forecast Orders" />
+                <Line yAxisId="revenue" type="monotone" dataKey="forecast_revenue" stroke="#2D4A27" strokeWidth={2} name="Forecast Revenue" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div>
+          <SectionHeader title="Peak Periods" subtitle="Strongest observed demand periods" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Type', 'Period', 'Orders', 'Revenue'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Orders' || h === 'Revenue' ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.peak_periods.slice(0, 8).map((row, index) => (
+                  <tr key={`${row.period_type}-${row.period}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontWeight: 700 }}>{row.period_type}</td>
+                    <td style={{ padding: '8px 8px' }}>{row.period}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.orders)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <SectionHeader title="Slow Periods" subtitle="Weakest observed demand periods" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Type', 'Period', 'Orders', 'Revenue'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Orders' || h === 'Revenue' ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.slow_periods.slice(0, 8).map((row, index) => (
+                  <tr key={`${row.period_type}-${row.period}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontWeight: 700 }}>{row.period_type}</td>
+                    <td style={{ padding: '8px 8px' }}>{row.period}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.orders)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {insights.weekly_momentum.length > 0 && (
+        <>
+          <SectionHeader title="Weekly Momentum" subtitle="Orders with rolling 4-week average" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={insights.weekly_momentum}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="week" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="orders" fill="#B8D4AE" name="Orders" />
+                <Line type="monotone" dataKey="orders_4w_avg" stroke="#2D4A27" strokeWidth={2.5} dot={false} name="4W Avg Orders" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
 
       {/* Day of week */}
       {day_of_week.length > 0 && (

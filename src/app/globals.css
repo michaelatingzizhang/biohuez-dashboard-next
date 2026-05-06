@@ -140,7 +140,17 @@
     min-width: max-content;
   }
 
+  @media (max-width: 980px) {
+    .dashboard-filter-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+  }
+
   @media (max-width: 640px) {
+    .dashboard-filter-grid {
+      grid-template-columns: 1fr !important;
+    }
+
     .dashboard-table-card {
       padding: 12px;
       margin-left: -4px;

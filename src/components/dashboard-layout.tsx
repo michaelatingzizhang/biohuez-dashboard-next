@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -21,6 +21,7 @@ import {
   DollarSign,
   Warehouse,
 } from "lucide-react";
+import { DashboardFilters } from "@/components/dashboard-filters";
 
 const navItems = [
   { icon: Home, label: "Summary", href: "/" },
@@ -52,21 +53,10 @@ const pageSubtitles: Record<string, string> = {
   "System Status": "Data pipeline health, sync status, and API connectivity",
 };
 
-const TIME_RANGES = ['7D', '5W', '10W', '26W', 'All'] as const
-type TimeRange = typeof TIME_RANGES[number]
-
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedRange, setSelectedRange] = useState<TimeRange>('All');
   const [dataLastUpdated, setDataLastUpdated] = useState<string | null>(null);
   const pathname = usePathname();
-
-  useEffect(() => {
-    const saved = localStorage.getItem('biohuez_range') as TimeRange | null;
-    if (saved && TIME_RANGES.includes(saved)) {
-      setSelectedRange(saved);
-    }
-  }, []);
 
   useEffect(() => {
     fetch("/api/system-status")
@@ -81,11 +71,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       })
       .catch(() => setDataLastUpdated(null))
   }, []);
-
-  const handleRangeSelect = (range: TimeRange) => {
-    setSelectedRange(range);
-    localStorage.setItem('biohuez_range', range);
-  };
 
   const getActiveNav = () => {
     if (pathname === "/") return "Summary";
@@ -192,33 +177,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Time Range Filter */}
-          <div style={{ borderTop: "1px solid #EBEBEB", padding: "10px 8px" }}>
-            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#555", marginBottom: 6, paddingLeft: 4 }}>Time Range</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {TIME_RANGES.map(range => (
-                <button
-                  key={range}
-                  onClick={() => handleRangeSelect(range)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 6,
-                    border: "none",
-                    cursor: "pointer",
-                    fontSize: "0.82rem",
-                    fontWeight: selectedRange === range ? 600 : 400,
-                    background: selectedRange === range ? "#2D4A27" : "#F0F0F0",
-                    color: selectedRange === range ? "white" : "#444",
-                    textAlign: "left",
-                    transition: "background 0.15s",
-                  }}
-                >
-                  {range}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div style={{ borderTop: "1px solid #EBEBEB", padding: 12 }}>
             <div style={{
               background: "#F9FBF8", borderRadius: 8, padding: "10px 12px",
@@ -248,7 +206,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {children}
+          <Suspense fallback={null}>
+            <DashboardFilters />
+          </Suspense>
+
+          <Suspense fallback={null}>
+            {children}
+          </Suspense>
         </main>
       </div>
     </div>

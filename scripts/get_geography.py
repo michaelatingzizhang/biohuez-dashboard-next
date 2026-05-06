@@ -22,6 +22,123 @@ def clean(obj):
 
 result = {}
 
+def concentration_level(pct):
+    if pct >= 70:
+        return 'High'
+    if pct >= 50:
+        return 'Moderate'
+    return 'Balanced'
+
+def build_insights(states, by_sku, total_rows, geo_note=None):
+    signals = []
+    sku_concentration = []
+    market_concentration = []
+
+    total_sku_revenue = sum(float(row.get('revenue') or 0) for row in by_sku)
+    total_sku_orders = sum(int(row.get('orders') or 0) for row in by_sku)
+    sorted_skus = sorted(by_sku, key=lambda row: float(row.get('revenue') or 0), reverse=True)
+
+    for row in sorted_skus:
+        revenue = float(row.get('revenue') or 0)
+        orders = int(row.get('orders') or 0)
+        sku_concentration.append({
+            'sku': row.get('sku'),
+            'orders': orders,
+            'revenue': round(revenue, 2),
+            'aov': round(revenue / orders, 2) if orders else 0,
+            'pct': round(revenue / total_sku_revenue * 100, 1) if total_sku_revenue else 0,
+        })
+
+    top_sku = sku_concentration[0] if sku_concentration else None
+    top_sku_share = top_sku.get('pct', 0) if top_sku else 0
+    top2_sku_share = round(sum(row.get('pct', 0) for row in sku_concentration[:2]), 1)
+
+    if top_sku and top_sku_share >= 60:
+        signals.append({
+            'severity': 'warning',
+            'title': 'SKU concentration is high',
+            'detail': f"{top_sku['sku']} contributes {top_sku_share}% of tracked revenue. Watch supply, stockouts, and margin shifts for this SKU closely.",
+        })
+    elif top_sku:
+        signals.append({
+            'severity': 'positive',
+            'title': 'SKU mix is reasonably balanced',
+            'detail': f"The top SKU contributes {top_sku_share}% of tracked revenue, leaving room for a healthier product mix.",
+        })
+
+    total_state_revenue = sum(float(row.get('revenue') or 0) for row in states)
+    total_state_orders = sum(int(row.get('orders') or 0) for row in states)
+    sorted_states = sorted(states, key=lambda row: float(row.get('revenue') or 0), reverse=True)
+
+    for row in sorted_states:
+        revenue = float(row.get('revenue') or 0)
+        orders = int(row.get('orders') or 0)
+        market_concentration.append({
+            'state': row.get('state'),
+            'orders': orders,
+            'revenue': round(revenue, 2),
+            'aov': round(revenue / orders, 2) if orders else 0,
+            'pct': round(revenue / total_state_revenue * 100, 1) if total_state_revenue else 0,
+        })
+
+    top_state = market_concentration[0] if market_concentration else None
+    top_state_share = top_state.get('pct', 0) if top_state else 0
+    top3_state_share = round(sum(row.get('pct', 0) for row in market_concentration[:3]), 1)
+
+    if top_state and top3_state_share >= 60:
+        signals.append({
+            'severity': 'warning',
+            'title': 'Market concentration is high',
+            'detail': f"The top 3 states contribute {top3_state_share}% of available geographic revenue.",
+        })
+    elif top_state:
+        signals.append({
+            'severity': 'positive',
+            'title': 'Geographic mix is diversified',
+            'detail': f"The top 3 states contribute {top3_state_share}% of available geographic revenue.",
+        })
+    else:
+        signals.append({
+            'severity': 'warning',
+            'title': 'State-level geography is unavailable',
+            'detail': geo_note or 'The current Amazon order export does not include buyer state/province, so this page uses SKU-level distribution as the best available proxy.',
+        })
+
+    if total_rows == 0:
+        signals.append({
+            'severity': 'warning',
+            'title': 'No order rows available',
+            'detail': 'No rows were returned from the comprehensive orders dataset.',
+        })
+
+    return {
+        'summary': {
+            'total_rows': total_rows,
+            'sku_count': len(sku_concentration),
+            'state_count': len(market_concentration),
+            'top_sku': top_sku.get('sku') if top_sku else None,
+            'top_sku_share_pct': top_sku_share,
+            'top2_sku_share_pct': top2_sku_share,
+            'sku_concentration_level': concentration_level(top_sku_share),
+            'top_state': top_state.get('state') if top_state else None,
+            'top_state_share_pct': top_state_share,
+            'top3_state_share_pct': top3_state_share,
+            'market_concentration_level': concentration_level(top3_state_share) if top_state else 'Unavailable',
+            'total_sku_revenue': round(total_sku_revenue, 2),
+            'total_sku_orders': total_sku_orders,
+            'total_state_revenue': round(total_state_revenue, 2),
+            'total_state_orders': total_state_orders,
+        },
+        'signals': signals,
+        'sku_concentration': sku_concentration,
+        'market_concentration': market_concentration,
+        'data_coverage': {
+            'state_level_available': bool(market_concentration),
+            'rows_analyzed': total_rows,
+            'note': geo_note,
+        },
+    }
+
 try:
     df = db.get_orders_comprehensive()
     if df is not None and not df.empty:
@@ -40,6 +157,8 @@ try:
             ).reset_index()
             sku_agg.columns = ['sku', 'orders', 'revenue']
             result['by_sku'] = clean(sku_agg.to_dict(orient='records'))
+        else:
+            result['by_sku'] = []
         
         # Since no state data, use shipment address name patterns for state inference
         # Actually, let's try to get state from get_orders() which may have it
@@ -83,12 +202,22 @@ try:
             result['geo_note'] = str(e2)
         
         result['total_rows'] = len(df)
+        result['insights'] = clean(build_insights(
+            result.get('states', []),
+            result.get('by_sku', []),
+            result['total_rows'],
+            result.get('geo_note'),
+        ))
     else:
         result['states'] = []
         result['by_sku'] = []
+        result['total_rows'] = 0
+        result['insights'] = clean(build_insights([], [], 0, 'No order rows available'))
 except Exception as e:
     result['error'] = str(e)
     result['states'] = []
     result['by_sku'] = []
+    result['total_rows'] = 0
+    result['insights'] = clean(build_insights([], [], 0, str(e)))
 
 print(json.dumps(result))

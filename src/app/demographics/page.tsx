@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { SignalGrid } from '@/components/insight-card'
+import { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface RepeatWeeklyRow {
   period_start: string
@@ -27,9 +28,73 @@ interface RepeatMonthlyRow {
   repeat_purchase_revenue?: string
 }
 
+interface DemographicRow {
+  date: string
+  category_type: string
+  segment_name: string
+  customer_pct: number
+  customer_count: number
+  units_ordered: number
+}
+
+interface CustomerSignal {
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface RepeatTrendRow {
+  period_short: string
+  orders: number
+  unique_customers: number
+  repeat_revenue: number
+  repeat_rate_pct: number
+  repeat_rate_delta: number | null
+}
+
+interface AsinRepeatHealthRow {
+  asin: string
+  periods: number
+  orders: number
+  unique_customers: number
+  avg_repeat_rate_pct: number
+  repeat_revenue: number
+}
+
+interface SegmentShiftRow {
+  category_type: string
+  segment_name: string
+  latest_date: string
+  previous_date: string
+  customer_pct: number
+  previous_customer_pct: number
+  delta_pct: number
+}
+
+interface CustomerInsights {
+  summary: {
+    latest_period?: string
+    latest_repeat_rate_pct?: number
+    latest_unique_customers?: number
+    latest_orders?: number
+    latest_repeat_revenue?: number
+    repeat_rate_delta?: number | null
+    latest_demographic_date?: string
+  }
+  signals: CustomerSignal[]
+  repeat_trend: RepeatTrendRow[]
+  asin_repeat_health: AsinRepeatHealthRow[]
+  segment_leaders: DemographicRow[]
+  segment_shifts: SegmentShiftRow[]
+  demographic_mix: DemographicRow[]
+}
+
 interface DemoData {
   repeat_weekly: RepeatWeeklyRow[]
   repeat_monthly: RepeatMonthlyRow[]
+  demographics_weekly?: DemographicRow[]
+  demographics_monthly?: DemographicRow[]
+  insights?: CustomerInsights
   error?: string
 }
 
@@ -37,7 +102,19 @@ function fmtPct(n: number | null | undefined) {
   if (n == null) return '—'
   return Number(n).toFixed(1) + '%'
 }
-
+function fmtMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+function fmtNum(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+function fmtSignedPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = Number(n) > 0 ? '+' : ''
+  return sign + Number(n).toFixed(1) + ' pts'
+}
 export default function DemographicsPage() {
   const [data, setData] = useState<DemoData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,7 +130,16 @@ export default function DemographicsPage() {
 
   const weekly = data?.repeat_weekly || []
   const monthly = data?.repeat_monthly || []
-  const hasData = weekly.length > 0 || monthly.length > 0
+  const insights = data?.insights || {
+    summary: {},
+    signals: [],
+    repeat_trend: [],
+    asin_repeat_health: [],
+    segment_leaders: [],
+    segment_shifts: [],
+    demographic_mix: [],
+  }
+  const hasData = weekly.length > 0 || monthly.length > 0 || insights.demographic_mix.length > 0
 
   if (!hasData) {
     return (
@@ -114,8 +200,109 @@ export default function DemographicsPage() {
 
       <Tabs defaultValue="repeat">
         <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
+          <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
           <TabsTrigger value="repeat">Repeat Purchase</TabsTrigger>
+          <TabsTrigger value="segments">Segments</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="intelligence">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+            <MetricCard
+              label="Repeat Rate"
+              value={fmtPct(insights.summary.latest_repeat_rate_pct)}
+              sublabel={insights.summary.latest_period || 'Latest period'}
+              status={(insights.summary.latest_repeat_rate_pct ?? 0) < 5 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Repeat Δ"
+              value={fmtSignedPct(insights.summary.repeat_rate_delta)}
+              sublabel="vs prior period"
+              status={(insights.summary.repeat_rate_delta ?? 0) < -2 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Unique Customers"
+              value={fmtNum(insights.summary.latest_unique_customers)}
+              sublabel="Latest period"
+            />
+            <MetricCard
+              label="Repeat Revenue"
+              value={fmtMoney(insights.summary.latest_repeat_revenue)}
+              sublabel="Latest period"
+            />
+          </div>
+
+          <SignalGrid signals={insights.signals} />
+
+          <SectionHeader title="Repeat Purchase Health" subtitle="Weekly customer retention and repeat revenue trend" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={insights.repeat_trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="period_short" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
+                <YAxis yAxisId="count" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
+                <Tooltip formatter={(value: unknown, name: unknown) => String(name).includes('%') ? Number(value).toFixed(1) + '%' : Number(value).toLocaleString()} />
+                <Legend />
+                <Bar yAxisId="count" dataKey="unique_customers" fill="#B8D4AE" name="Unique Customers" />
+                <Bar yAxisId="count" dataKey="orders" fill="#E6D7A8" name="Orders" />
+                <Line yAxisId="pct" type="monotone" dataKey="repeat_rate_pct" stroke="#2D4A27" strokeWidth={2.5} dot={false} name="Repeat Rate %" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+            <div>
+              <SectionHeader title="ASIN Repeat Health" subtitle="Sorted by average repeat rate" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['ASIN', 'Orders', 'Customers', 'Repeat %', 'Repeat Rev.'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'ASIN' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.asin_repeat_health.map(row => (
+                      <tr key={row.asin} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px', fontFamily: 'monospace', fontSize: '0.72rem' }}>{row.asin}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.orders)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtNum(row.unique_customers)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, color: row.avg_repeat_rate_pct < 5 ? '#E67E22' : '#2D4A27' }}>{fmtPct(row.avg_repeat_rate_pct)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.repeat_revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <SectionHeader title="Segment Shifts" subtitle="Largest recent demographic mix changes" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['Category', 'Segment', 'Share', 'Δ'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Share' || h === 'Δ' ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.segment_shifts.map((row, i) => (
+                      <tr key={`${row.category_type}-${row.segment_name}-${i}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 8px' }}>{row.category_type}</td>
+                        <td style={{ padding: '8px 8px', fontWeight: 600 }}>{row.segment_name}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.customer_pct)}</td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right', color: row.delta_pct >= 0 ? '#2D4A27' : '#C0392B', fontWeight: 700 }}>{fmtSignedPct(row.delta_pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
 
         <TabsContent value="repeat">
           {/* KPI Ribbon */}
@@ -197,6 +384,45 @@ export default function DemographicsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="segments">
+          <SectionHeader title="Latest Demographic Mix" subtitle={insights.summary.latest_demographic_date || 'Latest available manual Brand Analytics upload'} />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto', marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Category', 'Segment', 'Customer %', 'Customers', 'Units'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Category' || h === 'Segment' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.demographic_mix.map((row, i) => (
+                  <tr key={`${row.category_type}-${row.segment_name}-${i}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 12px' }}>{row.category_type}</td>
+                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{row.segment_name}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtPct(row.customer_pct)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtNum(row.customer_count)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtNum(row.units_ordered)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <SectionHeader title="Top Segments by Category" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+            {insights.segment_leaders.map((row, i) => (
+              <div key={`${row.category_type}-${row.segment_name}-${i}`} style={{ background: 'white', borderRadius: 10, padding: 14, borderLeft: '4px solid #2D4A27', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#666', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{row.category_type}</div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1A1A1A' }}>{row.segment_name}</div>
+                <div style={{ fontSize: '0.78rem', color: '#888', marginTop: 4 }}>
+                  {fmtPct(row.customer_pct)} · {fmtNum(row.customer_count)} customers · {fmtNum(row.units_ordered)} units
+                </div>
+              </div>
+            ))}
           </div>
         </TabsContent>
       </Tabs>

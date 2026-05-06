@@ -4,6 +4,7 @@ import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
+import { SignalGrid } from '@/components/insight-card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 interface StateRow {
@@ -20,9 +21,54 @@ interface SkuRow {
   revenue: number
 }
 
+interface GeoSignal {
+  severity: 'positive' | 'warning' | 'critical' | string
+  title: string
+  detail: string
+}
+
+interface ConcentrationRow {
+  sku?: string
+  state?: string
+  orders: number
+  revenue: number
+  aov: number
+  pct: number
+}
+
+interface GeoInsights {
+  summary: {
+    total_rows: number
+    sku_count: number
+    state_count: number
+    top_sku: string | null
+    top_sku_share_pct: number
+    top2_sku_share_pct: number
+    sku_concentration_level: string
+    top_state: string | null
+    top_state_share_pct: number
+    top3_state_share_pct: number
+    market_concentration_level: string
+    total_sku_revenue: number
+    total_sku_orders: number
+    total_state_revenue: number
+    total_state_orders: number
+  }
+  signals: GeoSignal[]
+  sku_concentration: ConcentrationRow[]
+  market_concentration: ConcentrationRow[]
+  data_coverage: {
+    state_level_available: boolean
+    rows_analyzed: number
+    note?: string | null
+  }
+}
+
 interface GeoData {
   states: StateRow[]
   by_sku?: SkuRow[]
+  insights?: GeoInsights
+  total_rows?: number
   geo_note?: string
   error?: string
 }
@@ -30,6 +76,11 @@ interface GeoData {
 function fmtMoney(n: number | null | undefined) {
   if (n == null) return '—'
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  return Number(n).toFixed(1) + '%'
 }
 
 const SKU_MAP: Record<string, string> = {
@@ -66,6 +117,10 @@ export default function GeographyPage() {
   const states = data?.states || []
   const bySkuRaw = data?.by_sku || []
   const bySku = bySkuRaw.map(r => ({ ...r, sku_name: SKU_MAP[r.sku] || r.sku }))
+  const insights = data?.insights
+  const summary = insights?.summary
+  const skuConcentration = insights?.sku_concentration || []
+  const marketConcentration = insights?.market_concentration || []
   const totalRevenue = states.reduce((s, r) => s + r.revenue, 0)
 
   // Generate intensity color for bars
@@ -85,6 +140,95 @@ export default function GeographyPage() {
     <div style={{ paddingBottom: 40 }}>
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Geography</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Order distribution by SKU and region</p>
+
+      {summary && (
+        <>
+          <SectionHeader title="Market Concentration" subtitle="Tier 2 signals based on the available order geography and SKU mix" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            <MetricCard
+              label="Top SKU Share"
+              value={fmtPct(summary.top_sku_share_pct)}
+              sublabel={summary.top_sku ? `${SKU_MAP[summary.top_sku] || summary.top_sku} · ${summary.sku_concentration_level}` : 'No SKU data'}
+            />
+            <MetricCard
+              label="Top 2 SKU Share"
+              value={fmtPct(summary.top2_sku_share_pct)}
+              sublabel={`${summary.sku_count} tracked SKUs`}
+            />
+            <MetricCard
+              label="State Coverage"
+              value={summary.state_count > 0 ? `${summary.state_count}` : 'Unavailable'}
+              sublabel={summary.state_count > 0 ? `${summary.market_concentration_level} concentration` : 'Using SKU proxy'}
+            />
+            <MetricCard
+              label="Rows Analyzed"
+              value={Number(summary.total_rows || 0).toLocaleString()}
+              sublabel={`${summary.total_sku_orders || 0} SKU order rows`}
+            />
+          </div>
+
+          {insights?.signals && <SignalGrid signals={insights.signals} />}
+
+          {skuConcentration.length > 0 && (
+            <>
+              <SectionHeader title="SKU Concentration" subtitle="Revenue dependency by product variant" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto', marginBottom: 20 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['SKU', 'Orders', 'Revenue', 'AOV', 'Share'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: h === 'SKU' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {skuConcentration.map(row => (
+                      <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: SKU_COLORS[row.sku || ''] || '#ccc', marginRight: 8 }} />
+                          {SKU_MAP[row.sku || ''] || row.sku}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.orders}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.aov)}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{fmtPct(row.pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {marketConcentration.length > 0 && (
+            <>
+              <SectionHeader title="State Concentration" subtitle="Market dependency by available region data" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto', marginBottom: 20 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['State', 'Orders', 'Revenue', 'AOV', 'Share'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: h === 'State' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marketConcentration.map(row => (
+                      <tr key={row.state} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{row.state}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.orders}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.aov)}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{fmtPct(row.pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {states.length === 0 ? (
         <>

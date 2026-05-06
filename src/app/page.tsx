@@ -5,6 +5,8 @@ import { MetricCard } from '@/components/metric-card'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { SectionHeader } from '@/components/section-header'
 import { DataFootnote, DataState } from '@/components/data-state'
+import { SignalGrid } from '@/components/insight-card'
+import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Line,
@@ -21,13 +23,29 @@ const SKU_COLORS: Record<string, string> = {
 type SalesRow = { date: string; sku_name: string; revenue: number; orders: number; units: number }
 type InvRow = { sku_name: string; total_quantity: number }
 type SummaryMeta = { last_updated?: string | null; sales_last_date?: string | null; inventory_last_fetched_at?: string | null }
+type ExecutiveInsight = {
+  section: string
+  href: string
+  severity: 'critical' | 'warning' | 'positive' | 'neutral' | string
+  title: string
+  detail: string
+}
+type ExecutiveInsights = {
+  items: ExecutiveInsight[]
+  counts: Record<string, number>
+  sources: { section: string; href: string; error?: string; signal_count: number }[]
+}
 
 export default function SummaryPage() {
-  const [sales, setSales] = useState<SalesRow[]>([])
-  const [inventory, setInventory] = useState<InvRow[]>([])
+  const [rawSales, setSales] = useState<SalesRow[]>([])
+  const [rawInventory, setInventory] = useState<InvRow[]>([])
   const [meta, setMeta] = useState<SummaryMeta | null>(null)
+  const [executiveInsights, setExecutiveInsights] = useState<ExecutiveInsights | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(true)
+  const [insightsError, setInsightsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const filters = useDashboardFilters()
 
   useEffect(() => {
     fetch('/api/summary')
@@ -40,6 +58,31 @@ export default function SummaryPage() {
       })
       .catch(e => { setError(String(e)); setLoading(false) })
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 35_000)
+
+    fetch('/api/executive-insights', { signal: controller.signal })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) setInsightsError(d.error)
+        setExecutiveInsights(d)
+      })
+      .catch(e => setInsightsError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        window.clearTimeout(timeout)
+        setInsightsLoading(false)
+      })
+
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [])
+
+  const sales = filterByDashboardState(rawSales, filters, row => row.date, row => row.sku_name)
+  const inventory = filterByDashboardState(rawInventory, filters, undefined, row => row.sku_name)
 
   // KPI calculations
   const totalRevenue = sales.reduce((s, r) => s + (r.revenue || 0), 0)
@@ -105,8 +148,38 @@ export default function SummaryPage() {
   if (loading) return <LoadingSkeleton />
   if (error) return <DataState variant="error" title="Summary data could not load" description={error} />
 
+  const insightItems = executiveInsights?.items || []
+  const insightCounts = executiveInsights?.counts || {}
+  const sourceErrors = executiveInsights?.sources?.filter(s => s.error) || []
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <SectionHeader title="Executive Insights" subtitle="Highest-priority Tier 2 signals across the dashboard" />
+      {insightsLoading ? (
+        <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20, color: '#888', fontSize: '0.85rem' }}>
+          Loading executive insights...
+        </div>
+      ) : insightItems.length > 0 ? (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            <MetricCard label="Critical" value={(insightCounts.critical || 0).toLocaleString()} sublabel="Needs action" status={(insightCounts.critical || 0) > 0 ? 'alert' : 'normal'} />
+            <MetricCard label="Watch Items" value={(insightCounts.warning || 0).toLocaleString()} sublabel="Monitor closely" status={(insightCounts.warning || 0) > 0 ? 'warn' : 'normal'} />
+            <MetricCard label="Wins" value={(insightCounts.positive || 0).toLocaleString()} sublabel="Positive signals" />
+            <MetricCard label="Sections Scanned" value={(executiveInsights?.sources?.length || 0).toLocaleString()} sublabel="Sales, finance, ops, market" />
+          </div>
+
+          <SignalGrid signals={insightItems} columns={3} compact={false} />
+        </>
+      ) : (
+        <DataState title="No executive insights available" description={insightsError || "Detailed page signals have not returned any summary items yet."} />
+      )}
+
+      {sourceErrors.length > 0 && (
+        <div style={{ background: '#FFF8E1', border: '1px solid #E67E22', borderRadius: 8, padding: 12, marginBottom: 20, color: '#8B5E00', fontSize: '0.78rem' }}>
+          Some insight sources could not be scanned: {sourceErrors.map(s => s.section).join(', ')}.
+        </div>
+      )}
+
       {/* KPI Ribbon */}
       <div className="dashboard-kpi-grid-tight">
         <MetricCard label="Total Revenue" value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} sublabel={sublabel} />

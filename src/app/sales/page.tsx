@@ -6,6 +6,8 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { DataState } from '@/components/data-state'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { SignalGrid } from '@/components/insight-card'
+import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   ComposedChart, AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -63,11 +65,93 @@ interface BsrRow {
   rank: number
 }
 
+interface SalesSignal {
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface WeeklyTrendRow {
+  week: string
+  revenue: number
+  orders: number
+  units: number
+  aov: number
+  asp: number
+  revenue_wow_pct: number | null
+  units_wow_pct: number | null
+  ad_spend: number
+  ad_sales: number
+  ad_orders: number
+  impressions: number
+  clicks: number
+  acos: number | null
+  roas: number | null
+  ad_sales_share_pct: number
+  ctr: number
+}
+
+interface SkuMoverRow {
+  sku: string
+  latest_week: string
+  previous_week: string
+  revenue: number
+  previous_revenue: number
+  revenue_delta: number
+  revenue_delta_pct: number | null
+  units: number
+  previous_units: number
+  units_delta: number
+  status: 'up' | 'down' | 'flat'
+}
+
+interface BsrMoverRow {
+  sku: string
+  latest_week: string
+  previous_week: string
+  rank: number
+  previous_rank: number
+  rank_delta: number
+  status: 'improved' | 'worse' | 'flat'
+}
+
+interface SalesDiagnosticRow {
+  metric: string
+  current: number
+  previous: number
+  delta: number
+  delta_pct: number | null
+  direction: 'higher' | 'lower'
+}
+
+interface SalesInsights {
+  summary: {
+    latest_week?: string
+    latest_revenue?: number
+    latest_units?: number
+    latest_orders?: number
+    latest_revenue_wow_pct?: number | null
+    latest_units_wow_pct?: number | null
+    latest_acos?: number | null
+    latest_roas?: number | null
+    latest_ad_sales_share_pct?: number | null
+    last4_revenue?: number
+    prior4_revenue?: number
+  }
+  signals: SalesSignal[]
+  weekly_trend: WeeklyTrendRow[]
+  sku_movers: SkuMoverRow[]
+  ad_dependency: { sku: string; revenue: number; units: number; revenue_share_pct: number }[]
+  bsr_movers: BsrMoverRow[]
+  diagnostics: SalesDiagnosticRow[]
+}
+
 interface SalesData {
   sales: SalesRow[]
   ads: AdsRow[]
   ads_by_type: AdsByTypeRow[]
   bsr: BsrRow[]
+  insights?: SalesInsights
   error?: string
 }
 
@@ -97,7 +181,16 @@ function fmtMoney(n: number | null | undefined) {
   if (n == null) return '—'
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-
+function fmtSignedMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = n > 0 ? '+' : n < 0 ? '-' : ''
+  return sign + fmtMoney(Math.abs(n))
+}
+function fmtSignedPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = n > 0 ? '+' : ''
+  return sign + n.toFixed(1) + '%'
+}
 function filterByDays(sales: SalesRow[], ads: AdsRow[], days: number) {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
@@ -129,6 +222,7 @@ export default function SalesPage() {
   const [data, setData] = useState<SalesData | null>(null)
   const [demographics, setDemographics] = useState<DemographicsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const filters = useDashboardFilters()
 
   useEffect(() => {
     fetch('/api/sales')
@@ -147,11 +241,13 @@ export default function SalesPage() {
   if (loading) return <LoadingSkeleton />
   if (!data || data.error) return <DataState variant="error" title="Sales data could not load" description={data?.error || "The sales endpoint returned no response."} />
 
-  const sales = (data.sales || []).map((row) => ({
+  const sales = filterByDashboardState((data.sales || []).map((row) => ({
     ...row,
     sku: row.sku || row.sku_name || 'Unknown',
-  }))
-  const { ads, ads_by_type, bsr } = data
+  })), filters, row => row.date, row => row.sku)
+  const ads = filterByDashboardState(data.ads || [], filters, row => row.date)
+  const ads_by_type = filterByDashboardState(data.ads_by_type || [], filters, row => row.date)
+  const bsr = filterByDashboardState(data.bsr || [], filters, row => row.date, row => row.sku_name)
   if (sales.length === 0) {
     return <DataState title="No sales rows available" description="MotherDuck is connected, but the sales table has no rows for this dashboard yet." />
   }
@@ -167,6 +263,15 @@ export default function SalesPage() {
   const acos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0
   const roas = totalAdSpend > 0 ? (totalAdSales / totalAdSpend) : 0
   const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0
+  const insights = data.insights || {
+    summary: {},
+    signals: [],
+    weekly_trend: [],
+    sku_movers: [],
+    ad_dependency: [],
+    bsr_movers: [],
+    diagnostics: [],
+  }
 
   // SKU performance table
   const skuMap: Record<string, { revenue: number; orders: number; units: number }> = {}
@@ -325,6 +430,7 @@ export default function SalesPage() {
         <div className="dashboard-tabs-scroll">
           <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
             <TabsTrigger value="traffic">Traffic</TabsTrigger>
             <TabsTrigger value="bsr">BSR</TabsTrigger>
             <TabsTrigger value="ads">Ads</TabsTrigger>
@@ -413,6 +519,150 @@ export default function SalesPage() {
                     <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.revPerUnit)}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="intelligence">
+          <div className="dashboard-kpi-grid">
+            <MetricCard
+              label="Latest Week Revenue"
+              value={fmtMoney(insights.summary.latest_revenue)}
+              sublabel={insights.summary.latest_week || 'Latest week'}
+            />
+            <MetricCard
+              label="Revenue WoW"
+              value={fmtSignedPct(insights.summary.latest_revenue_wow_pct)}
+              sublabel="Week over week"
+              status={(insights.summary.latest_revenue_wow_pct ?? 0) < -20 ? 'alert' : (insights.summary.latest_revenue_wow_pct ?? 0) < 0 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Latest ACOS"
+              value={fmtPct(insights.summary.latest_acos)}
+              sublabel="Weekly ad efficiency"
+              status={(insights.summary.latest_acos ?? 0) > 40 ? 'alert' : (insights.summary.latest_acos ?? 0) > 25 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Ad Sales Share"
+              value={fmtPct(insights.summary.latest_ad_sales_share_pct)}
+              sublabel="Ad-attributed / revenue"
+              status={(insights.summary.latest_ad_sales_share_pct ?? 0) > 70 ? 'warn' : 'normal'}
+            />
+          </div>
+
+          <SignalGrid signals={insights.signals} />
+
+          <SectionHeader title="Weekly Momentum" subtitle="Revenue, ad spend, ACOS, and ad-attributed share" />
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={insights.weekly_trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="week" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
+                <YAxis yAxisId="money" tick={{ fontSize: 11 }} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'k'} />
+                <YAxis yAxisId="rate" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
+                <Tooltip formatter={(value: unknown, name: unknown) => String(name).includes('%') || String(name).includes('ACOS') ? Number(value).toFixed(1) + '%' : '$' + Number(value).toFixed(2)} />
+                <Legend />
+                <Bar yAxisId="money" dataKey="revenue" fill="#B8D4AE" name="Revenue" />
+                <Line yAxisId="money" type="monotone" dataKey="ad_spend" stroke="#E67E22" strokeWidth={2} dot={false} name="Ad Spend" />
+                <Line yAxisId="rate" type="monotone" dataKey="acos" stroke="#C0392B" strokeWidth={2} dot={false} name="ACOS %" connectNulls />
+                <Line yAxisId="rate" type="monotone" dataKey="ad_sales_share_pct" stroke="#2980B9" strokeWidth={2} dot={false} name="Ad Sales Share %" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+            <div>
+              <SectionHeader title="SKU Movers" subtitle="Latest week versus previous week" />
+              <div className="dashboard-table-card">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['SKU', 'Revenue', 'Δ Revenue', 'Δ Units'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'SKU' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.sku_movers.map(row => {
+                      const color = row.revenue_delta >= 0 ? '#2D4A27' : '#C0392B'
+                      return (
+                        <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                          <td style={{ padding: '8px 8px', fontWeight: 700 }}>{row.sku}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 700 }}>
+                            {fmtSignedMoney(row.revenue_delta)}
+                            <span style={{ color: '#888', marginLeft: 4, fontWeight: 500 }}>({fmtSignedPct(row.revenue_delta_pct)})</span>
+                          </td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', color: row.units_delta >= 0 ? '#2D4A27' : '#C0392B', fontWeight: 700 }}>
+                            {row.units_delta > 0 ? '+' : ''}{row.units_delta.toLocaleString()}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <SectionHeader title="BSR Movers" subtitle="Lower rank is better" />
+              <div className="dashboard-table-card">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['SKU', 'Rank', 'Δ Rank', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'SKU' || h === 'Status' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.bsr_movers.map(row => {
+                      const improved = row.rank_delta < 0
+                      const color = improved ? '#2D4A27' : row.rank_delta > 0 ? '#C0392B' : '#888'
+                      return (
+                        <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                          <td style={{ padding: '8px 8px', fontWeight: 700 }}>{row.sku}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right' }}>#{row.rank}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 700 }}>{row.rank_delta > 0 ? '+' : ''}{row.rank_delta}</td>
+                          <td style={{ padding: '8px 8px', color, fontWeight: 700 }}>{row.status}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <SectionHeader title="Weekly Diagnostic Drivers" subtitle="Largest latest-week changes" />
+          <div className="dashboard-table-card">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Metric', 'Current', 'Previous', 'Change', 'Read'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Metric' || h === 'Read' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.diagnostics.map(row => {
+                  const favorable = row.direction === 'higher' ? row.delta >= 0 : row.delta <= 0
+                  const color = favorable ? '#2D4A27' : '#C0392B'
+                  const isMoney = ['Revenue', 'Ad spend', 'Ad sales'].includes(row.metric)
+                  return (
+                    <tr key={row.metric} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                      <td style={{ padding: '8px 8px', fontWeight: 700 }}>{row.metric}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{isMoney ? fmtMoney(row.current) : fmt(row.current)}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{isMoney ? fmtMoney(row.previous) : fmt(row.previous)}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 700 }}>
+                        {isMoney ? fmtSignedMoney(row.delta) : `${row.delta > 0 ? '+' : ''}${fmt(row.delta)}`}
+                        <span style={{ color: '#888', marginLeft: 4, fontWeight: 500 }}>({fmtSignedPct(row.delta_pct)})</span>
+                      </td>
+                      <td style={{ padding: '8px 8px', color, fontWeight: 700 }}>{favorable ? 'Favorable' : 'Pressure'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

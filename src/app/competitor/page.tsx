@@ -5,6 +5,8 @@ import { DataState } from '@/components/data-state'
 import { useEffect, useState } from 'react'
 import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { MetricCard } from '@/components/metric-card'
+import { SignalGrid } from '@/components/insight-card'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface CompetitorRow {
@@ -36,12 +38,75 @@ interface ReviewRow {
   price: number | null
 }
 
+interface CompetitorSignal {
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface RankGapRow {
+  type: 'BioHuez' | 'Competitor'
+  label: string
+  asin: string
+  rank: number
+  price: number | null
+  gap_vs_best_competitor: number
+}
+
+interface CompetitorThreatRow {
+  asin: string
+  name: string
+  price: number | null
+  rating: number | null
+  review_count: number | null
+  bsr: number
+  bsr_category: string
+}
+
+interface PricePositionRow {
+  asin: string
+  name: string
+  price: number
+  price_gap_vs_comp_avg: number
+  bsr: number
+}
+
+interface CompetitorBsrMoverRow {
+  sku: string
+  latest_week: string
+  previous_week: string
+  rank: number
+  previous_rank: number
+  rank_delta: number
+  status: 'improved' | 'worse' | 'flat'
+}
+
+interface CompetitorInsights {
+  summary: {
+    latest_competitor_date?: string
+    competitor_count?: number
+    best_competitor_bsr?: number | null
+    avg_competitor_price?: number | null
+    latest_biohuez_bsr_date?: string
+    best_biohuez_bsr?: number | null
+    avg_biohuez_bsr?: number | null
+    best_rank_gap_vs_competitor?: number | null
+  }
+  signals: CompetitorSignal[]
+  rank_gap: RankGapRow[]
+  price_positioning: PricePositionRow[]
+  competitor_threats: CompetitorThreatRow[]
+  biohuez_bsr_movers: CompetitorBsrMoverRow[]
+  review_positioning: ReviewRow[]
+}
+
 interface CompetitorData {
   competitor: CompetitorRow[]
   bsr: BsrRow[]
   item_comparison: unknown[]
   alt_purchase: unknown[]
   competitor_reviews: ReviewRow[]
+  insights?: CompetitorInsights
   error?: string
 }
 
@@ -54,6 +119,16 @@ const ASIN_LABELS: Record<string, string> = {
   'B09Q9D9F8S': 'Competitor 2',
   'B004INIW1Y': 'Competitor 3',
   'B00016X0AA': 'Herbatint 5N',
+}
+
+function fmtMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtRank(n: number | null | undefined) {
+  if (n == null) return '—'
+  return '#' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 export default function CompetitorPage() {
@@ -77,6 +152,15 @@ export default function CompetitorPage() {
   )
 
   const { competitor, bsr, competitor_reviews = [] } = data
+  const insights = data.insights || {
+    summary: {},
+    signals: [],
+    rank_gap: [],
+    price_positioning: [],
+    competitor_threats: [],
+    biohuez_bsr_movers: [],
+    review_positioning: [],
+  }
   if (competitor.length === 0 && bsr.length === 0 && competitor_reviews.length === 0) return (
     <DataState
       title="No competitor data yet"
@@ -163,11 +247,152 @@ export default function CompetitorPage() {
 
       <Tabs defaultValue="bsr">
         <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
+          <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
           <TabsTrigger value="bsr">BSR Comparison</TabsTrigger>
           <TabsTrigger value="reviews">Ratings &amp; Reviews</TabsTrigger>
           <TabsTrigger value="item">Item Comparison</TabsTrigger>
           <TabsTrigger value="alt">Alternate Purchase</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="intelligence">
+          <div className="dashboard-kpi-grid">
+            <MetricCard
+              label="Best BioHuez BSR"
+              value={fmtRank(insights.summary.best_biohuez_bsr)}
+              sublabel={insights.summary.latest_biohuez_bsr_date || 'Latest'}
+              status={(insights.summary.best_rank_gap_vs_competitor ?? 0) > 100 ? 'alert' : (insights.summary.best_rank_gap_vs_competitor ?? 0) > 25 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Best Competitor BSR"
+              value={fmtRank(insights.summary.best_competitor_bsr)}
+              sublabel={`${insights.summary.competitor_count ?? 0} competitors`}
+            />
+            <MetricCard
+              label="Rank Gap"
+              value={insights.summary.best_rank_gap_vs_competitor == null ? '—' : String(Math.round(insights.summary.best_rank_gap_vs_competitor))}
+              sublabel="BioHuez best vs competitor best"
+              status={(insights.summary.best_rank_gap_vs_competitor ?? 0) > 100 ? 'alert' : (insights.summary.best_rank_gap_vs_competitor ?? 0) > 25 ? 'warn' : 'normal'}
+            />
+            <MetricCard
+              label="Avg Comp Price"
+              value={fmtMoney(insights.summary.avg_competitor_price)}
+              sublabel={insights.summary.latest_competitor_date || 'Latest scrape'}
+            />
+          </div>
+
+          <SignalGrid signals={insights.signals} />
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+            <div>
+              <SectionHeader title="Rank Gap Table" subtitle="Current BioHuez and competitor rank positioning" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['Type', 'Label', 'Rank', 'Gap', 'Price'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Rank' || h === 'Gap' || h === 'Price' ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.rank_gap.slice(0, 12).map((row, index) => {
+                      const isOwn = row.type === 'BioHuez'
+                      return (
+                        <tr key={`${row.type}-${row.asin}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                          <td style={{ padding: '8px 8px', color: isOwn ? BIOHUEZ_COLOR : '#C0392B', fontWeight: 800 }}>{row.type}</td>
+                          <td style={{ padding: '8px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ASIN_LABELS[row.asin] || row.label}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 800 }}>{fmtRank(row.rank)}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', color: row.gap_vs_best_competitor > 100 ? '#C0392B' : '#666' }}>{Math.round(row.gap_vs_best_competitor)}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.price)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <SectionHeader title="BioHuez BSR Movement" subtitle="Weekly movement; lower rank is better" />
+              <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                      {['SKU', 'Rank', 'Δ Rank', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px', textAlign: h === 'SKU' || h === 'Status' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {insights.biohuez_bsr_movers.map(row => {
+                      const improved = row.rank_delta < 0
+                      const color = improved ? '#2D4A27' : row.rank_delta > 0 ? '#C0392B' : '#888'
+                      return (
+                        <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                          <td style={{ padding: '8px 8px', fontWeight: 800 }}>{row.sku}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtRank(row.rank)}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 800 }}>{row.rank_delta > 0 ? '+' : ''}{row.rank_delta}</td>
+                          <td style={{ padding: '8px 8px', color, fontWeight: 800 }}>{row.status}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <SectionHeader title="Top Competitor Threats" subtitle="Best current competitor BSR snapshots" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto', marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['ASIN', 'Price', 'BSR', 'Rating', 'Reviews', 'Product'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: ['Price', 'BSR', 'Rating', 'Reviews'].includes(h) ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.competitor_threats.slice(0, 8).map(row => (
+                  <tr key={row.asin} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontFamily: 'monospace', fontSize: '0.72rem', fontWeight: 700 }}>{ASIN_LABELS[row.asin] || row.asin}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.price)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 800 }}>{fmtRank(row.bsr)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.rating ?? '—'}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.review_count?.toLocaleString() ?? '—'}</td>
+                    <td style={{ padding: '8px 8px', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <SectionHeader title="Price Positioning" subtitle="Competitor price band and BSR position" />
+          <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['ASIN', 'Price', 'Vs Avg', 'BSR', 'Product'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: ['Price', 'Vs Avg', 'BSR'].includes(h) ? 'right' : 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.price_positioning.slice(0, 10).map(row => (
+                  <tr key={row.asin} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontFamily: 'monospace', fontSize: '0.72rem', fontWeight: 700 }}>{ASIN_LABELS[row.asin] || row.asin}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(row.price)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: row.price_gap_vs_comp_avg > 0 ? '#2D4A27' : '#C0392B', fontWeight: 700 }}>
+                      {row.price_gap_vs_comp_avg > 0 ? '+' : ''}{fmtMoney(row.price_gap_vs_comp_avg)}
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtRank(row.bsr)}</td>
+                    <td style={{ padding: '8px 8px', maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </TabsContent>
 
         <TabsContent value="bsr">
           {/* Competitor snapshot cards */}

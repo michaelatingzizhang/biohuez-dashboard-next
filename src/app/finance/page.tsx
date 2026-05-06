@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { DataState } from '@/components/data-state'
+import { SignalGrid } from '@/components/insight-card'
+import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -21,9 +23,62 @@ interface MonthlyRow {
   units_ordered: number
 }
 
+interface FinanceSignal {
+  type: string
+  severity: 'normal' | 'warn' | 'alert'
+  title: string
+  detail: string
+}
+
+interface FinanceDriver {
+  metric: string
+  current: number
+  previous: number
+  delta: number
+  direction: 'higher' | 'lower'
+}
+
+interface FinanceBreakdownRow {
+  metric: string
+  amount: number
+  abs_amount: number
+  pct_of_sales: number | null
+}
+
+interface MonthlyIntelligenceRow {
+  month: string
+  gross_sales: number
+  net_revenue: number
+  gross_margin_pct: number | null
+  fee_load_pct: number | null
+  refund_rate_pct: number | null
+  ad_load_pct: number | null
+  ad_adjusted_margin_pct: number | null
+  sales_mom_pct: number | null
+}
+
+interface FinanceInsights {
+  summary: {
+    latest_month?: string
+    latest_margin_pct?: number | null
+    latest_fee_load_pct?: number | null
+    latest_refund_rate_pct?: number | null
+    latest_ad_load_pct?: number | null
+    latest_ad_adjusted_margin_pct?: number | null
+    avg_3m_margin_pct?: number | null
+    avg_3m_fee_load_pct?: number | null
+    avg_3m_refund_rate_pct?: number | null
+  }
+  monthly_intelligence: MonthlyIntelligenceRow[]
+  signals: FinanceSignal[]
+  drivers: FinanceDriver[]
+  latest_breakdown: FinanceBreakdownRow[]
+}
+
 interface FinanceData {
   monthly: MonthlyRow[]
   settlement: Record<string, unknown>[]
+  insights?: FinanceInsights
   error?: string
 }
 
@@ -42,9 +97,22 @@ function marginColor(pct: number | null | undefined) {
   return '#C0392B'
 }
 
+function fmtSignedMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = Number(n) > 0 ? '+' : Number(n) < 0 ? '-' : ''
+  return sign + fmtMoney(Math.abs(Number(n)))
+}
+
+function fmtSignedPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  const sign = Number(n) > 0 ? '+' : ''
+  return sign + Number(n).toFixed(1) + '%'
+}
+
 export default function FinancePage() {
   const [data, setData] = useState<FinanceData | null>(null)
   const [loading, setLoading] = useState(true)
+  const filters = useDashboardFilters()
 
   useEffect(() => {
     fetch('/api/finance')
@@ -56,7 +124,8 @@ export default function FinancePage() {
   if (loading) return <LoadingSkeleton />
   if (!data || data.error) return <DataState variant="error" title="Finance data could not load" description={data?.error || "The finance endpoint returned no response."} />
 
-  const { monthly, settlement } = data
+  const monthly = filterByDashboardState(data.monthly || [], filters, row => `${String(row.month).slice(0, 7)}-01`)
+  const { settlement } = data
 
   if (!monthly || monthly.length === 0) {
     return (
@@ -79,6 +148,13 @@ export default function FinancePage() {
   const avgNetRevenue = avg('net_revenue')
   const avgGrossProfit = avg('gross_profit')
   const avgMargin = last3.reduce((s, r) => s + (r.gross_margin_pct || 0), 0) / (last3.length || 1)
+  const insights = data.insights || {
+    summary: {},
+    monthly_intelligence: [],
+    signals: [],
+    drivers: [],
+    latest_breakdown: [],
+  }
 
   // Chart data: waterfall-style stacked bar
   const chartData = sorted.map(r => ({
@@ -140,6 +216,112 @@ export default function FinancePage() {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      <SectionHeader title="Finance Intelligence" subtitle="Margin pressure, fee drag, refund impact, and month-over-month changes" />
+      <div className="dashboard-kpi-grid">
+        <MetricCard
+          label="Latest Margin"
+          value={fmtPct(insights.summary.latest_margin_pct)}
+          sublabel={insights.summary.latest_month || 'Latest month'}
+          status={(insights.summary.latest_margin_pct ?? 0) < 35 ? 'alert' : (insights.summary.latest_margin_pct ?? 0) < 50 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Fee Load"
+          value={fmtPct(insights.summary.latest_fee_load_pct)}
+          sublabel="Amazon + FBA / sales"
+          status={(insights.summary.latest_fee_load_pct ?? 0) > 45 ? 'alert' : (insights.summary.latest_fee_load_pct ?? 0) > 35 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Refund Rate"
+          value={fmtPct(insights.summary.latest_refund_rate_pct)}
+          sublabel="Refunds / sales"
+          status={(insights.summary.latest_refund_rate_pct ?? 0) > 10 ? 'alert' : (insights.summary.latest_refund_rate_pct ?? 0) > 5 ? 'warn' : 'normal'}
+        />
+        <MetricCard
+          label="Ad-Adjusted Margin"
+          value={fmtPct(insights.summary.latest_ad_adjusted_margin_pct)}
+          sublabel="Before COGS"
+          status={(insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 20 ? 'alert' : (insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 35 ? 'warn' : 'normal'}
+        />
+      </div>
+
+      <SignalGrid signals={insights.signals} limit={6} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div>
+          <SectionHeader title="Latest Month Drivers" subtitle="Largest changes versus the previous month" />
+          <div className="dashboard-table-card">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Metric', 'Current', 'Change', 'Read'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Metric' || h === 'Read' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.drivers.slice(0, 8).map(row => {
+                  const favorable = row.direction === 'higher' ? row.delta >= 0 : row.delta <= 0
+                  const color = favorable ? '#2D4A27' : '#C0392B'
+                  return (
+                    <tr key={row.metric} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                      <td style={{ padding: '8px 8px', fontWeight: 600 }}>{row.metric}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>{row.metric.includes('Units') ? Number(row.current).toLocaleString() : fmtMoney(row.current)}</td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', color, fontWeight: 700 }}>{row.metric.includes('Units') ? Number(row.delta).toLocaleString() : fmtSignedMoney(row.delta)}</td>
+                      <td style={{ padding: '8px 8px', color, fontSize: '0.74rem', fontWeight: 600 }}>{favorable ? 'Favorable' : 'Pressure'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <SectionHeader title="Latest Cost Drag" subtitle="Largest deductions as share of gross sales" />
+          <div className="dashboard-table-card">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                  {['Metric', 'Amount', '% Sales'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Metric' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {insights.latest_breakdown.map(row => (
+                  <tr key={row.metric} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                    <td style={{ padding: '8px 8px', fontWeight: 600 }}>{row.metric}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: row.amount < 0 ? '#C0392B' : '#2D4A27' }}>{fmtSignedMoney(row.amount)}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtPct(row.pct_of_sales)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {insights.monthly_intelligence.length > 0 && (
+        <>
+          <SectionHeader title="Margin Pressure Trend" subtitle="Fee load, refund rate, ad load, and ad-adjusted margin" />
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={insights.monthly_intelligence}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
+                <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
+                <Legend />
+                <Line type="monotone" dataKey="fee_load_pct" stroke="#E67E22" strokeWidth={2} dot name="Fee Load %" connectNulls />
+                <Line type="monotone" dataKey="refund_rate_pct" stroke="#C0392B" strokeWidth={2} dot name="Refund Rate %" connectNulls />
+                <Line type="monotone" dataKey="ad_load_pct" stroke="#2980B9" strokeWidth={2} dot name="Ad Load %" connectNulls />
+                <Line type="monotone" dataKey="ad_adjusted_margin_pct" stroke="#2D4A27" strokeWidth={2.5} dot name="Ad-Adjusted Margin %" connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
 
       {/* Monthly P&L Table */}
       <SectionHeader title="Monthly P&L Table" />
