@@ -1,9 +1,11 @@
-import { execFileSync } from "child_process"
+import { execFile } from "child_process"
 import { existsSync } from "fs"
 import path from "path"
+import { promisify } from "util"
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_BUFFER_BYTES = 10 * 1024 * 1024
+const execFileAsync = promisify(execFile)
 
 function resolveLegacyDashboardDir() {
   return process.env.BIOHUEZ_LEGACY_DASHBOARD_DIR ?? path.resolve(process.cwd(), "..", "biohuez-dashboard")
@@ -16,19 +18,19 @@ function resolvePythonBinary(legacyDashboardDir: string) {
   return existsSync(localVenvPython) ? localVenvPython : "python3"
 }
 
-export function runPythonJsonScript<T = unknown>(scriptName: string): T {
+export async function runPythonJsonScript<T = unknown>(scriptName: string): Promise<T> {
   const legacyDashboardDir = resolveLegacyDashboardDir()
   const python = resolvePythonBinary(legacyDashboardDir)
   const scriptPath = path.join(process.cwd(), "scripts", scriptName)
 
-  const output = execFileSync(python, [scriptPath], {
+  const { stdout } = await execFileAsync(python, [scriptPath], {
     env: {
       ...process.env,
       BIOHUEZ_LEGACY_DASHBOARD_DIR: legacyDashboardDir,
     },
     timeout: DEFAULT_TIMEOUT_MS,
     maxBuffer: DEFAULT_BUFFER_BYTES,
-  }).toString()
+  })
 
-  return JSON.parse(output) as T
+  return JSON.parse(stdout) as T
 }

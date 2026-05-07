@@ -72,15 +72,16 @@ export function DashboardFilters() {
 
   return (
     <div className="dashboard-filter-grid" style={{
-      background: 'white',
-      border: '1px solid #E5E5E5',
-      borderRadius: 10,
-      padding: 12,
-      marginBottom: 20,
+      background: 'rgba(255, 255, 255, 0.92)',
+      border: '1px solid rgba(34, 44, 38, 0.1)',
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 22,
       display: 'grid',
       gridTemplateColumns: 'minmax(180px, 1.2fr) repeat(2, minmax(140px, 0.8fr)) minmax(170px, 0.9fr) auto',
       gap: 10,
       alignItems: 'end',
+      boxShadow: '0 1px 2px rgba(20, 28, 22, 0.03), 0 12px 26px rgba(20, 28, 22, 0.04)',
     }}>
       <div>
         <div style={{ fontSize: '0.72rem', color: '#666', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Quick Range</div>
@@ -95,13 +96,13 @@ export function DashboardFilters() {
               key={item.label}
               onClick={() => setPreset(item.value)}
               style={{
-                border: '1px solid #DADADA',
-                background: '#F8F8F8',
-                color: '#444',
-                borderRadius: 6,
+                border: '1px solid rgba(34, 44, 38, 0.12)',
+                background: '#F7F9F6',
+                color: '#344238',
+                borderRadius: 9,
                 padding: '7px 10px',
                 fontSize: '0.78rem',
-                fontWeight: 700,
+                fontWeight: 800,
                 cursor: 'pointer',
               }}
             >
@@ -121,8 +122,8 @@ export function DashboardFilters() {
           onChange={event => updateFilter('sku', event.target.value)}
           style={{
             width: '100%',
-            border: '1px solid #DADADA',
-            borderRadius: 6,
+            border: '1px solid rgba(34, 44, 38, 0.14)',
+            borderRadius: 9,
             padding: '8px 10px',
             fontSize: '0.82rem',
             background: 'white',
@@ -137,14 +138,14 @@ export function DashboardFilters() {
         onClick={resetFilters}
         disabled={!hasActiveFilters}
         style={{
-          border: 'none',
-          borderRadius: 6,
+          border: hasActiveFilters ? '1px solid #2D4A27' : '1px solid rgba(34, 44, 38, 0.1)',
+          borderRadius: 9,
           padding: '9px 12px',
           fontSize: '0.78rem',
-          fontWeight: 700,
+          fontWeight: 800,
           cursor: hasActiveFilters ? 'pointer' : 'default',
           color: hasActiveFilters ? 'white' : '#999',
-          background: hasActiveFilters ? '#2D4A27' : '#EFEFEF',
+          background: hasActiveFilters ? '#2D4A27' : '#F1F3F0',
         }}
       >
         Reset
@@ -168,8 +169,8 @@ function FilterInput({ label, type, value, onChange }: {
         onChange={event => onChange(event.target.value)}
         style={{
           width: '100%',
-          border: '1px solid #DADADA',
-          borderRadius: 6,
+          border: '1px solid rgba(34, 44, 38, 0.14)',
+          borderRadius: 9,
           padding: '8px 10px',
           fontSize: '0.82rem',
           color: '#1A1A1A',

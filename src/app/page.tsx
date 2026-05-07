@@ -161,7 +161,7 @@ export default function SummaryPage() {
         </div>
       ) : insightItems.length > 0 ? (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+          <div className="dashboard-kpi-grid-tight">
             <MetricCard label="Critical" value={(insightCounts.critical || 0).toLocaleString()} sublabel="Needs action" status={(insightCounts.critical || 0) > 0 ? 'alert' : 'normal'} />
             <MetricCard label="Watch Items" value={(insightCounts.warning || 0).toLocaleString()} sublabel="Monitor closely" status={(insightCounts.warning || 0) > 0 ? 'warn' : 'normal'} />
             <MetricCard label="Wins" value={(insightCounts.positive || 0).toLocaleString()} sublabel="Positive signals" />
@@ -180,7 +180,6 @@ export default function SummaryPage() {
         </div>
       )}
 
-      {/* KPI Ribbon */}
       <div className="dashboard-kpi-grid-tight">
         <MetricCard label="Total Revenue" value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} sublabel={sublabel} />
         <MetricCard label="Total Orders" value={totalOrders.toLocaleString()} sublabel={sublabel} />

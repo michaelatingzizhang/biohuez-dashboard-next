@@ -72,7 +72,7 @@ export function SignalGrid({ signals, columns = 2, limit, compact = true }: {
   if (visible.length === 0) return null
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 12, marginBottom: 20 }}>
+    <div className="signal-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
       {visible.map((signal, index) => (
         <SignalCard key={`${signal.title}-${index}`} signal={signal} compact={compact} />
       ))}

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { runPythonJsonScript } from "@/lib/python-runner"
 
+const DEFAULT_CACHE_TTL_MS = Number(process.env.BIOHUEZ_API_CACHE_TTL_MS || 5 * 60 * 1000)
+
 const SCRIPT_ENDPOINTS: Record<string, string> = {
   "get_summary.py": "summary",
   "get_sales.py": "sales",
@@ -16,6 +18,14 @@ const SCRIPT_ENDPOINTS: Record<string, string> = {
   "get_system_status.py": "system-status",
   "get_executive_insights.py": "executive-insights",
 }
+
+type CacheEntry<T> = {
+  expiresAt: number
+  value?: T
+  pending?: Promise<T>
+}
+
+const responseCache = new Map<string, CacheEntry<unknown>>()
 
 async function fetchFromBackend<T>(scriptName: string): Promise<T> {
   const baseUrl = process.env.BIOHUEZ_API_BASE_URL?.replace(/\/$/, "")
@@ -41,12 +51,39 @@ async function fetchFromBackend<T>(scriptName: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function getCachedBackendData<T>(scriptName: string): Promise<T> {
+  const key = `${process.env.BIOHUEZ_API_BASE_URL || "local"}:${scriptName}`
+  const now = Date.now()
+  const cached = responseCache.get(key) as CacheEntry<T> | undefined
+
+  if (cached?.value !== undefined && cached.expiresAt > now) {
+    return cached.value
+  }
+
+  if (cached?.pending) {
+    return cached.pending
+  }
+
+  const pending = fetchFromBackend<T>(scriptName)
+    .then(value => {
+      responseCache.set(key, { value, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS })
+      return value
+    })
+    .catch(error => {
+      responseCache.delete(key)
+      throw error
+    })
+
+  responseCache.set(key, { pending, expiresAt: now + DEFAULT_CACHE_TTL_MS })
+  return pending
+}
+
 export async function dashboardApiResponse<T = unknown>(
   scriptName: string,
   fallback: Record<string, unknown> = {},
 ) {
   try {
-    return NextResponse.json(await fetchFromBackend<T>(scriptName))
+    return NextResponse.json(await getCachedBackendData<T>(scriptName))
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error(`${scriptName} API error:`, msg)
