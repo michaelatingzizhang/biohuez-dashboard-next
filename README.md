@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 ### 3. Connect the Python data bridge
 
@@ -43,6 +43,24 @@ BIOHUEZ_PYTHON=/absolute/path/to/biohuez-dashboard/venv/bin/python3
 ```
 
 For cloud data, also set `MOTHERDUCK_TOKEN` so the Python scripts can read MotherDuck instead of a local `biohuez.db`.
+
+### 4. Run the faster FastAPI data service
+
+For local development or deployment, prefer the persistent FastAPI service over spawning Python from every Next.js API route.
+
+Terminal 1:
+
+```bash
+./venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Terminal 2:
+
+```bash
+BIOHUEZ_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+The Next.js API routes will proxy to FastAPI when `BIOHUEZ_API_BASE_URL` is set. Without it, they fall back to the local Python script bridge.
 
 ## Project Structure
 
@@ -79,7 +97,7 @@ The dashboard includes navigation for:
 
 ## Data Bridge
 
-The dashboard currently reads Amazon analytics data through the legacy Python dashboard data layer. Next.js API routes call scripts in `scripts/get_*.py`, and those scripts import the sibling `biohuez-dashboard` project through `scripts/_bootstrap.py`.
+The dashboard reads Amazon analytics data through the legacy Python dashboard data layer. Next.js API routes can either call scripts in `scripts/get_*.py` directly or proxy to the persistent FastAPI service in `backend/main.py`.
 
 Use `.env.local` to point the app at the legacy dashboard and Python executable when the default sibling-folder layout is not used.
 

@@ -1,34 +1,21 @@
+import asyncio
+import contextlib
+import io
 import json
 import os
-import secrets
-import subprocess
+import runpy
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT_DIR / "scripts"
-DEFAULT_TIMEOUT_SECONDS = 45
-
-for env_path in (ROOT_DIR / ".env.local", ROOT_DIR / ".env", ROOT_DIR.parent / "biohuez-dashboard" / ".env"):
-    if env_path.exists():
-        load_dotenv(env_path, override=False)
-
-ENV_ALIASES = {
-    "SP_API_CLIENT_ID": "SP_API_LWA_APP_ID",
-    "LWA_CLIENT_ID": "SP_API_LWA_APP_ID",
-    "SP_API_CLIENT_SECRET": "SP_API_LWA_CLIENT_SECRET",
-    "LWA_CLIENT_SECRET": "SP_API_LWA_CLIENT_SECRET",
-}
-
-for source, target in ENV_ALIASES.items():
-    if os.getenv(source) and not os.getenv(target):
-        os.environ[target] = os.environ[source]
+CACHE_TTL_SECONDS = int(os.environ.get("BIOHUEZ_API_CACHE_TTL_SECONDS", "300"))
 
 ENDPOINTS = {
     "summary": "get_summary.py",
@@ -46,12 +33,11 @@ ENDPOINTS = {
     "executive-insights": "get_executive_insights.py",
 }
 
-
 app = FastAPI(title="BioHuez Dashboard API", version="0.1.0")
 
 allowed_origins = [
     origin.strip()
-    for origin in os.getenv("BIOHUEZ_ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:3000").split(",")
+    for origin in os.environ.get("BIOHUEZ_ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:3002").split(",")
     if origin.strip()
 ]
 
@@ -63,63 +49,72 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-def require_api_key(x_biohuez_api_key: str | None = Header(default=None)) -> None:
-    expected = os.getenv("BIOHUEZ_API_KEY")
-    if not expected:
-        return
-    if not x_biohuez_api_key or not secrets.compare_digest(x_biohuez_api_key, expected):
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+cache: dict[str, dict[str, Any]] = {}
+script_lock = asyncio.Lock()
 
 
-def run_script(script_name: str) -> Any:
+def check_api_key(x_biohuez_api_key: str | None) -> None:
+    expected = os.environ.get("BIOHUEZ_API_KEY")
+    if expected and x_biohuez_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def run_json_script(script_name: str) -> Any:
     script_path = SCRIPTS_DIR / script_name
     if not script_path.exists():
-        raise HTTPException(status_code=404, detail=f"Script not found: {script_name}")
+        raise FileNotFoundError(f"Unknown script: {script_name}")
 
-    timeout = int(os.getenv("BIOHUEZ_SCRIPT_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)))
-    legacy_dir = os.getenv("BIOHUEZ_LEGACY_DASHBOARD_DIR", str(ROOT_DIR.parent / "biohuez-dashboard"))
-
+    old_argv = sys.argv[:]
+    old_path = sys.path[:]
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    sys.argv = [str(script_path)]
+    sys.path.insert(0, str(SCRIPTS_DIR))
+    sys.path.insert(0, str(ROOT_DIR))
     try:
-        proc = subprocess.run(
-            [sys.executable, str(script_path)],
-            cwd=str(ROOT_DIR),
-            env={**os.environ, "BIOHUEZ_LEGACY_DASHBOARD_DIR": legacy_dir},
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise HTTPException(status_code=504, detail=f"{script_name} timed out after {timeout}s") from exc
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                runpy.run_path(str(script_path), run_name="__main__")
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise RuntimeError(stderr.getvalue().strip() or stdout.getvalue().strip() or f"{script_name} exited with {exc.code}") from exc
+    finally:
+        sys.argv = old_argv
+        sys.path = old_path
 
-    if proc.returncode != 0:
-        detail = proc.stderr.strip() or proc.stdout.strip() or f"{script_name} exited with code {proc.returncode}"
-        raise HTTPException(status_code=500, detail=detail)
+    output = stdout.getvalue().strip()
+    if not output:
+        raise RuntimeError(stderr.getvalue().strip() or f"{script_name} returned no JSON")
+    return json.loads(output)
 
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail=f"{script_name} returned invalid JSON") from exc
+
+async def endpoint_payload(endpoint: str) -> Any:
+    now = time.time()
+    cached = cache.get(endpoint)
+    if cached and cached["expires_at"] > now:
+        return cached["payload"]
+
+    script_name = ENDPOINTS[endpoint]
+    async with script_lock:
+        cached = cache.get(endpoint)
+        if cached and cached["expires_at"] > time.time():
+            return cached["payload"]
+        payload = await asyncio.to_thread(run_json_script, script_name)
+        cache[endpoint] = {"payload": payload, "expires_at": time.time() + CACHE_TTL_SECONDS}
+        return payload
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, Any]:
+    return {"status": "ok", "endpoints": sorted(ENDPOINTS)}
 
 
-@app.get("/ready", dependencies=[Depends(require_api_key)])
-def ready() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "endpoints": sorted(ENDPOINTS.keys()),
-        "auth_enabled": bool(os.getenv("BIOHUEZ_API_KEY")),
-    }
-
-
-@app.get("/{endpoint}", dependencies=[Depends(require_api_key)])
-def dashboard_endpoint(endpoint: str) -> Any:
-    script_name = ENDPOINTS.get(endpoint)
-    if not script_name:
-        raise HTTPException(status_code=404, detail=f"Unknown endpoint: {endpoint}")
-    return run_script(script_name)
+@app.get("/{endpoint}")
+async def get_endpoint(endpoint: str, x_biohuez_api_key: str | None = Header(default=None)) -> Any:
+    check_api_key(x_biohuez_api_key)
+    if endpoint not in ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Unknown endpoint")
+    try:
+        return await endpoint_payload(endpoint)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
