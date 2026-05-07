@@ -77,6 +77,148 @@ def pct_value(value):
         return 0
     return n * 100 if 0 <= n <= 1 else n
 
+def safe_num(value):
+    try:
+        if value is None or pd.isna(value):
+            return 0.0
+        return float(value)
+    except Exception:
+        return 0.0
+
+def date_label(value, granularity):
+    try:
+        dt = pd.to_datetime(value)
+    except Exception:
+        return str(value)[:10]
+    if granularity == 'monthly':
+        return dt.strftime('%b %Y')
+    return dt.strftime('%b %d, %Y')
+
+def segment_pct(frame, category, segment):
+    rows = frame[(frame['category_type'] == category) & (frame['segment_name'] == segment)]
+    if rows.empty:
+        return 0.0
+    return float(rows['customer_pct'].mean())
+
+def combined_pct(frame, category, segments):
+    rows = frame[(frame['category_type'] == category) & (frame['segment_name'].isin(segments))]
+    if rows.empty:
+        return 0.0
+    return float(rows['customer_pct'].sum())
+
+def weighted_segment_pct(frame, category, segment):
+    rows = frame[(frame['category_type'] == category) & (frame['segment_name'] == segment)].copy()
+    if rows.empty:
+        return 0.0
+    weights = pd.to_numeric(rows.get('total_customers', 0), errors='coerce').fillna(0)
+    if weights.sum() <= 0:
+        return float(rows['customer_pct'].mean())
+    return float((rows['customer_pct'] * weights).sum() / weights.sum())
+
+def weighted_combined_pct(frame, category, segments):
+    values = []
+    weights = []
+    for _, group in frame[frame['category_type'] == category].groupby('date'):
+        subset = group[group['segment_name'].isin(segments)]
+        if subset.empty:
+            continue
+        values.append(float(subset['customer_pct'].sum()))
+        weights.append(float(pd.to_numeric(group.get('total_customers', 0), errors='coerce').max()))
+    if not values:
+        return 0.0
+    if sum(weights) <= 0:
+        return float(sum(values) / len(values))
+    return float(sum(value * weight for value, weight in zip(values, weights)) / sum(weights))
+
+def profile_kpis(frame, label):
+    return {
+        'label': label,
+        'female': segment_pct(frame, 'gender', 'Female'),
+        'age_35_44': segment_pct(frame, 'age_group', '35-44'),
+        'core_age_45_plus': combined_pct(frame, 'age_group', ['45-54', '55-64', '65+']),
+        'income_100_125': segment_pct(frame, 'household_income', '$100k+'),
+        'income_125_150': segment_pct(frame, 'household_income', '$125k+'),
+        'core_income_150_plus': combined_pct(frame, 'household_income', ['$150k+', '$175k+', '$200k+', '$250k+']),
+    }
+
+def alltime_profile_kpis(frame, label):
+    return {
+        'label': label,
+        'female': weighted_segment_pct(frame, 'gender', 'Female'),
+        'age_35_44': weighted_segment_pct(frame, 'age_group', '35-44'),
+        'core_age_45_plus': weighted_combined_pct(frame, 'age_group', ['45-54', '55-64', '65+']),
+        'income_100_125': weighted_segment_pct(frame, 'household_income', '$100k+'),
+        'income_125_150': weighted_segment_pct(frame, 'household_income', '$125k+'),
+        'core_income_150_plus': weighted_combined_pct(frame, 'household_income', ['$150k+', '$175k+', '$200k+', '$250k+']),
+    }
+
+def comparison_rows(frame, a_date, b_date):
+    rows = []
+    a = frame[frame['date'] == a_date].copy()
+    b = frame[frame['date'] == b_date].copy()
+    for category in ['age_group', 'gender', 'household_income', 'marital_status', 'education']:
+        category_segments = sorted(set(a[a['category_type'] == category]['segment_name']) | set(b[b['category_type'] == category]['segment_name']))
+        for segment in category_segments:
+            a_rows = a[(a['category_type'] == category) & (a['segment_name'] == segment)]
+            b_rows = b[(b['category_type'] == category) & (b['segment_name'] == segment)]
+            a_pct = safe_num(a_rows['customer_pct'].mean()) if not a_rows.empty else 0.0
+            b_pct = safe_num(b_rows['customer_pct'].mean()) if not b_rows.empty else 0.0
+            a_customers = safe_num(a_rows['customer_count'].sum()) if not a_rows.empty else 0.0
+            b_customers = safe_num(b_rows['customer_count'].sum()) if not b_rows.empty else 0.0
+            rows.append({
+                'category_type': category,
+                'segment_name': segment,
+                'period_a_pct': a_pct,
+                'period_b_pct': b_pct,
+                'delta_pct': b_pct - a_pct,
+                'period_a_customers': a_customers,
+                'period_b_customers': b_customers,
+                'delta_customers': b_customers - a_customers,
+            })
+    return sorted(rows, key=lambda row: abs(row['delta_pct']), reverse=True)
+
+def snapshot_rows(frame, selected_date):
+    rows = frame[frame['date'] == selected_date].copy()
+    if rows.empty:
+        return []
+    return rows.sort_values(['category_type', 'customer_pct'], ascending=[True, False]).to_dict(orient='records')
+
+def trend_rows(frame, selected_dates):
+    rows = frame[frame['date'].isin(selected_dates)].copy()
+    if rows.empty:
+        return []
+    return rows.sort_values(['category_type', 'segment_name', 'date']).to_dict(orient='records')
+
+def profile_for_frame(frame, granularity):
+    if frame.empty:
+        return {}
+    dates = sorted(frame['date'].dropna().unique())
+    labels = {value: date_label(value, granularity) for value in dates}
+    latest_date = dates[-1]
+    previous_date = dates[-2] if len(dates) >= 2 else dates[-1]
+    trend_dates = dates[-min(3, len(dates)):]
+    latest = frame[frame['date'] == latest_date].copy()
+    latest_customers = safe_num(latest[latest['category_type'] == 'gender']['total_customers'].max()) if 'total_customers' in latest else 0.0
+    previous = frame[frame['date'] == previous_date].copy()
+    previous_customers = safe_num(previous[previous['category_type'] == 'gender']['total_customers'].max()) if 'total_customers' in previous else 0.0
+    return {
+        'available_periods': [{'date': value, 'label': labels[value]} for value in dates],
+        'latest_date': latest_date,
+        'latest_label': labels[latest_date],
+        'previous_date': previous_date,
+        'previous_label': labels[previous_date],
+        'latest_customers': latest_customers,
+        'previous_customers': previous_customers,
+        'customer_delta': latest_customers - previous_customers,
+        'customer_delta_pct': ((latest_customers - previous_customers) / previous_customers * 100) if previous_customers else None,
+        'latest_kpis': profile_kpis(latest, labels[latest_date]),
+        'alltime_kpis': alltime_profile_kpis(frame, f"{labels[dates[0]]} - {labels[dates[-1]]}"),
+        'comparison': comparison_rows(frame, previous_date, latest_date),
+        'snapshot': snapshot_rows(frame, latest_date),
+        'trend': trend_rows(frame, trend_dates),
+        'trend_periods': [{'date': value, 'label': labels[value]} for value in trend_dates],
+    }
+
 try:
     repeat_weekly = pd.DataFrame(result.get('repeat_weekly') or [])
     repeat_monthly = pd.DataFrame(result.get('repeat_monthly') or [])
@@ -91,6 +233,7 @@ try:
         'segment_leaders': [],
         'segment_shifts': [],
         'demographic_mix': [],
+        'profiles': {'monthly': {}, 'weekly': {}},
     }
 
     repeat_frames = []
@@ -181,7 +324,8 @@ try:
         df['customer_pct'] = pd.to_numeric(df.get('customer_pct', 0), errors='coerce').fillna(0)
         df['customer_count'] = pd.to_numeric(df.get('customer_count', 0), errors='coerce').fillna(0)
         df['units_ordered'] = pd.to_numeric(df.get('units_ordered', 0), errors='coerce').fillna(0)
-        demo_frames.append(df[['date', 'granularity', 'category_type', 'segment_name', 'customer_pct', 'customer_count', 'units_ordered']])
+        df['total_customers'] = pd.to_numeric(df.get('total_customers', 0), errors='coerce').fillna(0)
+        demo_frames.append(df[['date', 'granularity', 'category_type', 'segment_name', 'customer_pct', 'customer_count', 'units_ordered', 'total_customers']])
 
     if demo_frames:
         demo = pd.concat(demo_frames, ignore_index=True)
@@ -225,6 +369,11 @@ try:
                 'detail': f"{top_shift['segment_name']} changed {top_shift['delta_pct']:.1f} points in {top_shift['category_type']}.",
             })
 
+        insights['profiles'] = {
+            'monthly': clean(profile_for_frame(demo[demo['granularity'] == 'monthly'].copy(), 'monthly')),
+            'weekly': clean(profile_for_frame(demo[demo['granularity'] == 'weekly'].copy(), 'weekly')),
+        }
+
     result['insights'] = clean(insights)
 except Exception as e:
     result['insights_error'] = str(e)
@@ -236,6 +385,7 @@ except Exception as e:
         'segment_leaders': [],
         'segment_shifts': [],
         'demographic_mix': [],
+        'profiles': {'monthly': {}, 'weekly': {}},
     }
 
 print(json.dumps(result))

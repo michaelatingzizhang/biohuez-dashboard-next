@@ -35,6 +35,7 @@ interface DemographicRow {
   customer_pct: number
   customer_count: number
   units_ordered: number
+  total_customers?: number
 }
 
 interface CustomerSignal {
@@ -71,6 +72,50 @@ interface SegmentShiftRow {
   delta_pct: number
 }
 
+interface ProfileKpis {
+  label?: string
+  female?: number
+  age_35_44?: number
+  core_age_45_plus?: number
+  income_100_125?: number
+  income_125_150?: number
+  core_income_150_plus?: number
+}
+
+interface ProfilePeriod {
+  date: string
+  label: string
+}
+
+interface ProfileComparisonRow {
+  category_type: string
+  segment_name: string
+  period_a_pct: number
+  period_b_pct: number
+  delta_pct: number
+  period_a_customers: number
+  period_b_customers: number
+  delta_customers: number
+}
+
+interface DemographicProfile {
+  available_periods?: ProfilePeriod[]
+  latest_date?: string
+  latest_label?: string
+  previous_date?: string
+  previous_label?: string
+  latest_customers?: number
+  previous_customers?: number
+  customer_delta?: number
+  customer_delta_pct?: number | null
+  latest_kpis?: ProfileKpis
+  alltime_kpis?: ProfileKpis
+  comparison?: ProfileComparisonRow[]
+  snapshot?: DemographicRow[]
+  trend?: DemographicRow[]
+  trend_periods?: ProfilePeriod[]
+}
+
 interface CustomerInsights {
   summary: {
     latest_period?: string
@@ -87,6 +132,10 @@ interface CustomerInsights {
   segment_leaders: DemographicRow[]
   segment_shifts: SegmentShiftRow[]
   demographic_mix: DemographicRow[]
+  profiles?: {
+    monthly?: DemographicProfile
+    weekly?: DemographicProfile
+  }
 }
 
 interface DemoData {
@@ -138,6 +187,7 @@ export default function DemographicsPage() {
     segment_leaders: [],
     segment_shifts: [],
     demographic_mix: [],
+    profiles: { monthly: {}, weekly: {} },
   }
   const hasData = weekly.length > 0 || monthly.length > 0 || insights.demographic_mix.length > 0
 
@@ -201,6 +251,7 @@ export default function DemographicsPage() {
       <Tabs defaultValue="repeat">
         <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
           <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
+          <TabsTrigger value="profiles">Streamlit Profiles</TabsTrigger>
           <TabsTrigger value="repeat">Repeat Purchase</TabsTrigger>
           <TabsTrigger value="segments">Segments</TabsTrigger>
         </TabsList>
@@ -301,6 +352,13 @@ export default function DemographicsPage() {
                 </table>
               </div>
             </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="profiles">
+          <div className="dashboard-chart-grid">
+            <ProfilePanel title="Monthly Profile" profile={insights.profiles?.monthly} />
+            <ProfilePanel title="Weekly Profile" profile={insights.profiles?.weekly} />
           </div>
         </TabsContent>
 
@@ -428,4 +486,159 @@ export default function DemographicsPage() {
       </Tabs>
     </div>
   )
+}
+
+const kpiLabels: [keyof ProfileKpis, string][] = [
+  ['female', 'Female'],
+  ['age_35_44', 'Age 35-44'],
+  ['core_age_45_plus', 'Core Age 45+'],
+  ['income_100_125', 'Inc. $100k+'],
+  ['income_125_150', 'Inc. $125k+'],
+  ['core_income_150_plus', 'Core Inc. $150k+'],
+]
+
+function ProfilePanel({ title, profile }: { title: string; profile?: DemographicProfile }) {
+  const hasProfile = Boolean(profile?.latest_kpis && profile?.comparison?.length)
+  if (!hasProfile) {
+    return (
+      <div className="dashboard-card">
+        <SectionHeader title={title} subtitle="No matching profile data available yet" />
+        <div style={{ color: '#888', fontSize: '0.85rem' }}>Upload demographic exports to populate this Streamlit-matched profile module.</div>
+      </div>
+    )
+  }
+
+  const customerDelta = profile?.customer_delta ?? 0
+  const customerDeltaPct = profile?.customer_delta_pct ?? null
+  const topComparison = (profile?.comparison || []).slice(0, 10)
+  const snapshot = (profile?.snapshot || []).filter(row => row.segment_name !== 'N/A').slice(0, 14)
+  const trendRows = buildTrendRows(profile?.trend || [], profile?.trend_periods || [])
+
+  return (
+    <div className="dashboard-card">
+      <SectionHeader
+        title={title}
+        subtitle={`${profile?.previous_label || 'Previous'} vs ${profile?.latest_label || 'Latest'}`}
+      />
+
+      <div className="dashboard-kpi-grid-tight">
+        <MetricCard label="Latest Customers" value={fmtNum(profile?.latest_customers)} sublabel={profile?.latest_label || 'Latest'} />
+        <MetricCard label="Previous Customers" value={fmtNum(profile?.previous_customers)} sublabel={profile?.previous_label || 'Previous'} />
+        <MetricCard
+          label="Customer Change"
+          value={`${customerDelta >= 0 ? '+' : ''}${fmtNum(customerDelta)}`}
+          sublabel={customerDeltaPct == null ? 'No prior period' : `${customerDeltaPct >= 0 ? '+' : ''}${customerDeltaPct.toFixed(1)}%`}
+          status={customerDelta < 0 ? 'warn' : 'normal'}
+        />
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <SectionHeader title="Latest Profile KPIs" subtitle={profile?.latest_kpis?.label || 'Latest period'} />
+        <ProfileKpiGrid kpis={profile?.latest_kpis} />
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <SectionHeader title="All-Time Weighted Profile" subtitle={profile?.alltime_kpis?.label || 'Available period range'} />
+        <ProfileKpiGrid kpis={profile?.alltime_kpis} />
+      </div>
+
+      <SectionHeader title="Period Comparison" subtitle="Largest share shifts versus previous period" />
+      <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+        <table className="dashboard-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Segment</th>
+              <th>Previous</th>
+              <th>Latest</th>
+              <th>Delta</th>
+              <th>Customer Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topComparison.map((row, index) => (
+              <tr key={`${title}-${row.category_type}-${row.segment_name}-${index}`}>
+                <td>{formatCategory(row.category_type)}</td>
+                <td>{row.segment_name}</td>
+                <td>{fmtPct(row.period_a_pct)}</td>
+                <td>{fmtPct(row.period_b_pct)}</td>
+                <td style={{ color: row.delta_pct >= 0 ? '#2D4A27' : '#C0392B', fontWeight: 700 }}>{fmtSignedPct(row.delta_pct)}</td>
+                <td style={{ color: row.delta_customers >= 0 ? '#2D4A27' : '#C0392B', fontWeight: 700 }}>
+                  {row.delta_customers >= 0 ? '+' : ''}{fmtNum(row.delta_customers)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <SectionHeader title="Latest Snapshot" subtitle="Top non-N/A demographic segments in latest period" />
+      <div style={{ height: 280, marginBottom: 16 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={snapshot} layout="vertical" margin={{ left: 80, right: 16, top: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
+            <YAxis type="category" dataKey="segment_name" tick={{ fontSize: 10 }} width={82} />
+            <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
+            <Bar dataKey="customer_pct" fill="#6B8F61" radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <SectionHeader title="3-Period Trend" subtitle="Streamlit-style recent profile movement" />
+      <div style={{ overflowX: 'auto' }}>
+        <table className="dashboard-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Segment</th>
+              {(profile?.trend_periods || []).map(period => <th key={period.date}>{period.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {trendRows.slice(0, 18).map(row => (
+              <tr key={`${title}-${row.category}-${row.segment}`}>
+                <td>{formatCategory(row.category)}</td>
+                <td>{row.segment}</td>
+                {(profile?.trend_periods || []).map(period => (
+                  <td key={period.date}>{fmtPct(row.values[period.date])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ProfileKpiGrid({ kpis }: { kpis?: ProfileKpis }) {
+  return (
+    <div className="dashboard-kpi-grid-tight">
+      {kpiLabels.map(([key, label]) => (
+        <MetricCard key={key} label={label} value={fmtPct(kpis?.[key] as number | undefined)} sublabel={kpis?.label || ''} />
+      ))}
+    </div>
+  )
+}
+
+function formatCategory(category: string) {
+  return category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function buildTrendRows(rows: DemographicRow[], periods: ProfilePeriod[]) {
+  const map = new Map<string, { category: string; segment: string; values: Record<string, number> }>()
+  for (const row of rows) {
+    if (row.segment_name === 'N/A') continue
+    const key = `${row.category_type}:${row.segment_name}`
+    const existing = map.get(key) || { category: row.category_type, segment: row.segment_name, values: {} }
+    existing.values[row.date] = row.customer_pct
+    map.set(key, existing)
+  }
+  return [...map.values()]
+    .map(row => ({
+      ...row,
+      maxValue: Math.max(...periods.map(period => row.values[period.date] || 0)),
+    }))
+    .sort((a, b) => b.maxValue - a.maxValue)
 }
