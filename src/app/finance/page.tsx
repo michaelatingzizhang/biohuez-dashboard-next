@@ -9,7 +9,7 @@ import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
 } from 'recharts'
 
 interface MonthlyRow {
@@ -78,6 +78,10 @@ interface FinanceInsights {
 interface FinanceData {
   monthly: MonthlyRow[]
   settlement: Record<string, unknown>[]
+  calendar_pl?: Record<string, number | string | null>[]
+  settlement_pl?: Record<string, number | string | null>[]
+  per_unit?: { metric: string; amount: number }[]
+  targets?: { asp?: number; cogs_per_unit?: number; gp_pct?: number; cm_pct?: number; ad_pct?: number }
   insights?: FinanceInsights
   error?: string
 }
@@ -109,6 +113,57 @@ function fmtSignedPct(n: number | null | undefined) {
   return sign + Number(n).toFixed(1) + '%'
 }
 
+const plRows = [
+  ['asp_per_unit', 'ASP / Unit', 'money2'],
+  ['units', 'Units Sold', 'int'],
+  ['units_per_day', 'Units / Day', 'one'],
+  ['target_gross_sales', 'Target Gross Sales', 'money'],
+  ['price_discount', 'Price Discount', 'signed'],
+  ['actual_selling_price', 'Actual Selling Price', 'subtotal'],
+  ['coupons_rebates', 'Promotions & Coupons', 'signed'],
+  ['refunds', 'Refunds', 'signed'],
+  ['net_sales', 'Net Sales', 'subtotal'],
+  ['g2n_pct', 'G2N%', 'pct'],
+  ['landed_cogs', 'Landed COGS', 'signed'],
+  ['gross_profit', 'Gross Profit', 'subtotal'],
+  ['gm_pct', 'GM%', 'pct'],
+  ['ads_spend', 'Advertising', 'signed'],
+  ['marketing_contribution', 'Marketing Contribution', 'subtotal'],
+  ['mktc_pct', 'MCM%', 'pct'],
+  ['referral_fees', 'Referral Fees', 'signed'],
+  ['fba_fees', 'FBA Fulfillment', 'signed'],
+  ['storage_fees', 'Storage & Other', 'signed'],
+  ['contribution_margin', 'Contribution Margin', 'total'],
+  ['cm_pct', 'CM%', 'pct'],
+] as const
+
+const perUnitLabels: Record<string, string> = {
+  target_gross_sales: 'Gross Sales',
+  price_discount: 'Price Discount',
+  actual_selling_price: 'Principal ASP',
+  coupons_rebates: 'Promos',
+  refunds: 'Refunds',
+  net_sales: 'Net Sales',
+  landed_cogs: 'COGS',
+  gross_profit: 'Gross Profit',
+  ads_spend: 'Advertising',
+  marketing_contribution: 'Marketing Contribution',
+  referral_fees: 'Referral',
+  fba_fees: 'FBA',
+  storage_fees: 'Storage',
+  contribution_margin: 'Contribution Margin',
+}
+
+function fmtPL(value: unknown, kind: string) {
+  const n = Number(value || 0)
+  if (kind === 'int') return n ? Math.round(n).toLocaleString() : '—'
+  if (kind === 'one') return n ? n.toFixed(1) : '—'
+  if (kind === 'pct') return n ? `${n.toFixed(1)}%` : '—'
+  if (kind === 'money2') return n ? `$${n.toFixed(2)}` : '—'
+  if (kind === 'signed') return n < 0 ? `(${fmtMoney(Math.abs(n)).replace('$', '')})` : n > 0 ? fmtMoney(n) : '—'
+  return fmtMoney(n)
+}
+
 export default function FinancePage() {
   const [data, setData] = useState<FinanceData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -138,6 +193,10 @@ export default function FinancePage() {
 
   const sorted = [...monthly].sort((a, b) => a.month.localeCompare(b.month))
   const last3 = sorted.slice(-3)
+  const calendarPL = data.calendar_pl || []
+  const displayPL = calendarPL.slice(-7)
+  const settlementPL = data.settlement_pl || []
+  const perUnit = data.per_unit || []
 
   const avg = (key: keyof MonthlyRow) => {
     const vals = last3.map(r => Number(r[key]) || 0)
@@ -156,7 +215,6 @@ export default function FinancePage() {
     latest_breakdown: [],
   }
 
-  // Chart data: waterfall-style stacked bar
   const chartData = sorted.map(r => ({
     month: r.month?.slice(0, 7),
     gross_sales: r.gross_sales,
@@ -171,7 +229,6 @@ export default function FinancePage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Finance</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Settlement P&L, fee load, and net revenue trends (3-month avg)</p>
 
-      {/* KPI Ribbon */}
       <div className="dashboard-kpi-grid">
         <MetricCard label="Avg Gross Sales" value={fmtMoney(avgGrossSales)} sublabel="Last 3 months" />
         <MetricCard label="Avg Net Revenue" value={fmtMoney(avgNetRevenue)} sublabel="Last 3 months" />
@@ -184,7 +241,6 @@ export default function FinancePage() {
         />
       </div>
 
-      {/* P&L Bar Chart */}
       <SectionHeader title="Monthly P&L Breakdown" subtitle="Gross sales vs Amazon fees, FBA fees, and net after fees" />
       <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
         <ResponsiveContainer width="100%" height={280}>
@@ -202,7 +258,6 @@ export default function FinancePage() {
         </ResponsiveContainer>
       </div>
 
-      {/* Margin Trend */}
       <SectionHeader title="Fee-Adjusted Margin Trend" subtitle="Net after fees as a percentage of gross sales" />
       <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
         <ResponsiveContainer width="100%" height={200}>
@@ -246,6 +301,79 @@ export default function FinancePage() {
       </div>
 
       <SignalGrid signals={insights.signals} limit={6} />
+
+      {displayPL.length > 0 && (
+        <>
+          <SectionHeader title="Calendar P&L" subtitle="Streamlit-matched monthly bridge from target gross sales to contribution margin" />
+          <div className="dashboard-table-card" style={{ marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', color: '#fff', background: '#1B4D2E', width: '30%' }}>P&L Line</th>
+                  {displayPL.map(row => (
+                    <th key={String(row.month)} style={{ padding: '8px 10px', textAlign: 'right', color: '#fff', background: '#1B4D2E' }}>
+                      {String(row.label || row.month)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {plRows.map(([key, label, kind]) => {
+                  const subtotal = kind === 'subtotal' || kind === 'total'
+                  const muted = kind === 'pct' || kind === 'one'
+                  return (
+                    <tr key={key}>
+                      <td style={{
+                        padding: muted ? '4px 10px 4px 20px' : '7px 10px',
+                        color: subtotal ? '#fff' : muted ? '#999' : '#333',
+                        background: kind === 'total' ? '#1B4D2E' : subtotal ? '#444' : 'transparent',
+                        fontWeight: subtotal ? 700 : 500,
+                        borderBottom: '1px solid #F2F2F2',
+                      }}>
+                        {label}
+                      </td>
+                      {displayPL.map(row => (
+                        <td key={`${String(row.month)}-${key}`} style={{
+                          padding: muted ? '4px 10px' : '7px 10px',
+                          textAlign: 'right',
+                          color: subtotal ? '#fff' : muted ? '#999' : Number(row[key]) < 0 ? '#C0392B' : '#333',
+                          background: kind === 'total' ? '#1B4D2E' : subtotal ? '#444' : 'transparent',
+                          fontWeight: subtotal ? 700 : 500,
+                          borderBottom: '1px solid #F2F2F2',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {fmtPL(row[key], kind)}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {perUnit.length > 0 && (
+        <>
+          <SectionHeader title="Per-Unit Economics" subtitle="Every major P&L line divided by units sold, matching the old Streamlit unit economics module" />
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={perUnit.map(row => ({ ...row, label: perUnitLabels[row.metric] || row.metric, value: row.amount }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={90} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
+                <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                <Bar dataKey="value" name="Per Unit">
+                  {perUnit.map(row => (
+                    <Cell key={row.metric} fill={row.amount < 0 ? '#C0392B' : row.metric.includes('contribution') ? '#1B4D2E' : '#6B8F61'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
         <div>
@@ -323,7 +451,41 @@ export default function FinancePage() {
         </>
       )}
 
-      {/* Monthly P&L Table */}
+      {calendarPL.length > 0 && (
+        <>
+          <SectionHeader title="Streamlit Trend Modules" subtitle="ASP, net sales per unit, GP%, CM%, A&P%, and contribution margin trends" />
+          <div className="dashboard-chart-grid">
+            <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={calendarPL}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
+                  <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="asp_per_unit" stroke="#2D4A27" strokeWidth={2} dot name="ASP / Unit" connectNulls />
+                  <Line type="monotone" dataKey="net_sales" stroke="#2980B9" strokeWidth={2} dot name="Net Sales" connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={calendarPL}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toFixed(0) + '%'} />
+                  <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
+                  <Legend />
+                  <Line type="monotone" dataKey="gm_pct" stroke="#2D4A27" strokeWidth={2} dot name="GP%" connectNulls />
+                  <Line type="monotone" dataKey="cm_pct" stroke="#E67E22" strokeWidth={2} dot name="CM%" connectNulls />
+                  <Line type="monotone" dataKey="ap_pct" stroke="#C0392B" strokeWidth={2} dot name="A&P%" connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </>
+      )}
+
       <SectionHeader title="Monthly P&L Table" />
       <div className="dashboard-table-card">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
@@ -361,9 +523,35 @@ export default function FinancePage() {
         </table>
       </div>
 
-      {/* Settlement Summary */}
       <SectionHeader title="Settlement Summary" />
-      {(!settlement || settlement.length === 0) ? (
+      {settlementPL.length > 0 ? (
+        <div className="dashboard-table-card">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+                {['Period', 'Units', 'Product Charges', 'Promos', 'Refunds', 'Net Revenue', 'Fees', 'Net Proceeds', 'Disbursed'].map(h => (
+                  <th key={h} style={{ padding: '8px 8px', textAlign: h === 'Period' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {settlementPL.map(row => (
+                <tr key={String(row.group_id)} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                  <td style={{ padding: '8px 8px', fontWeight: 700 }}>{String(row.period || '—')}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right' }}>{Number(row.units || 0).toLocaleString()}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(Number(row.product_charges || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right', color: '#C0392B' }}>{fmtSignedMoney(Number(row.promo_rebates || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right', color: '#C0392B' }}>{fmtSignedMoney(Number(row.refunds || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Number(row.net_revenue || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right', color: '#C0392B' }}>{fmtSignedMoney(Number(row.total_fees || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Number(row.net_proceeds || 0))}</td>
+                  <td style={{ padding: '8px 8px', textAlign: 'right' }}>{fmtMoney(Number(row.disbursed || 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (!settlement || settlement.length === 0) ? (
         <DataState title="Settlement data not available" description="Monthly rollups are visible, but settlement-level records are not available yet." />
       ) : (
         <div className="dashboard-table-card">
