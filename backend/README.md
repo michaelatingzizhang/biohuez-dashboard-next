@@ -32,9 +32,14 @@ Required environment variables:
 MOTHERDUCK_TOKEN=...
 BIOHUEZ_API_KEY=generate-a-long-random-secret
 BIOHUEZ_ALLOWED_ORIGINS=https://your-vercel-app.vercel.app
+BIOHUEZ_API_CACHE_TTL_SECONDS=300
+BIOHUEZ_API_CACHE_STALE_SECONDS=3600
+BIOHUEZ_API_REFRESH_INTERVAL_SECONDS=240
 ```
 
 Set the same `BIOHUEZ_API_KEY` in Vercel. The frontend sends it to FastAPI as the `x-biohuez-api-key` header. `/health` stays public for hosting health checks; `/ready` and all dashboard data endpoints require the key when configured.
+
+The service preloads the main dashboard endpoints on startup, refreshes them in the background, and serves the last cached response while a refresh is running.
 
 Start command:
 

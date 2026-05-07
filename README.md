@@ -94,6 +94,7 @@ The dashboard includes navigation for:
 - **Cohorts** - Retention proxy by cohort month
 - **Competitor** - BSR comparison, scraped ratings, and Brand Analytics comparison sections
 - **Seasonality** - Order patterns by day, week, month, and hour
+- **Impact Analysis** - Before/after readout for marketing actions, search updates, and listing artwork
 
 ## Data Bridge
 
@@ -113,6 +114,7 @@ Available API routes:
 - `/api/cohorts`
 - `/api/competitor`
 - `/api/seasonality`
+- `/api/impact-analysis`
 - `/api/system-status`
 
 ## Customization

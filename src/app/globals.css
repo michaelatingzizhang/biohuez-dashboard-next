@@ -511,6 +511,7 @@
   }
 
   .dashboard-table-card,
+  .dashboard-card,
   .dashboard-chart-card {
     background: rgba(255, 255, 255, 0.94) !important;
     border: 1px solid rgba(34, 44, 38, 0.1);
@@ -520,10 +521,40 @@
     max-width: 100%;
   }
 
+  .dashboard-card {
+    padding: 16px;
+  }
+
   .dashboard-table-card {
     padding: 16px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dashboard-table th,
+  .dashboard-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(34, 44, 38, 0.08);
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .dashboard-table th {
+    color: #526154;
+    background: rgba(247, 249, 246, 0.78);
+    font-size: 0.72rem;
+    font-weight: 760;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
   }
 
   .dashboard-table-card table {

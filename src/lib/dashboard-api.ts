@@ -15,6 +15,7 @@ const SCRIPT_ENDPOINTS: Record<string, string> = {
   "get_competitor.py": "competitor",
   "get_seasonality.py": "seasonality",
   "get_cohorts.py": "cohorts",
+  "get_impact_analysis.py": "impact-analysis",
   "get_system_status.py": "system-status",
   "get_executive_insights.py": "executive-insights",
 }

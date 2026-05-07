@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 
 export function LoadingSkeleton() {
-  // Only render on client to avoid hydration mismatch entirely
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   if (!mounted) return null
@@ -12,7 +11,6 @@ export function LoadingSkeleton() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* KPI ribbon skeleton */}
       <div className="dashboard-kpi-grid-tight">
         {[...Array(5)].map((_, i) => (
           <div key={i} style={{
@@ -26,7 +24,6 @@ export function LoadingSkeleton() {
         ))}
       </div>
 
-      {/* Chart skeleton */}
       <div style={{ background: 'white', borderRadius: 10, padding: 16, height: 320, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ height: 14, width: '20%', background: '#F0F0F0', borderRadius: 4 }} />
         <div style={{ flex: 1, background: '#FAFAFA', borderRadius: 8, display: 'flex', alignItems: 'flex-end', gap: 4, padding: 16 }}>
@@ -39,7 +36,6 @@ export function LoadingSkeleton() {
         </div>
       </div>
 
-      {/* Two chart skeletons side by side */}
       <div className="dashboard-chart-grid">
         {[0, 1].map(j => (
           <div key={j} style={{ background: 'white', borderRadius: 10, padding: 16, height: 240 }}>
@@ -49,7 +45,6 @@ export function LoadingSkeleton() {
         ))}
       </div>
 
-      {/* Table skeleton */}
       <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
         <div style={{ height: 12, width: '20%', background: '#F0F0F0', borderRadius: 4, marginBottom: 16 }} />
         {[...Array(5)].map((_, i) => (
@@ -68,7 +63,7 @@ export function LoadingSkeleton() {
       `}</style>
 
       <div style={{ fontSize: '0.75rem', color: '#aaa', textAlign: 'center', marginTop: 4 }}>
-        Connecting to database...
+        Loading latest dashboard data...
       </div>
     </div>
   )

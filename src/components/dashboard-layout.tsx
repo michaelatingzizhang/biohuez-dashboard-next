@@ -20,6 +20,7 @@ import {
   Search,
   Swords,
   Target,
+  TrendingUp,
   Users,
   Warehouse,
   X,
@@ -38,6 +39,7 @@ const navItems = [
   { icon: CalendarDays, label: "Seasonality", href: "/seasonality" },
   { icon: GitMerge, label: "Cohorts", href: "/cohorts" },
   { icon: Swords, label: "Competitor", href: "/competitor" },
+  { icon: TrendingUp, label: "Impact Analysis", href: "/impact-analysis" },
   { icon: Activity, label: "System Status", href: "/system-status" },
 ];
 
@@ -52,6 +54,7 @@ const pageSubtitles: Record<string, string> = {
   Geography: "Shipment geography, city concentration, state performance, and SKU mix",
   Cohorts: "Customer cohort retention and LTV analysis",
   Competitor: "Competitive pricing, visibility, positioning, and market signals",
+  "Impact Analysis": "Before and after readout for marketing actions, search updates, and listing artwork",
   Seasonality: "Seasonal demand, peak periods, weekly patterns, and trend comparisons",
   "System Status": "MotherDuck, Amazon SP-API, Ads API, sync freshness, and endpoint health",
 };

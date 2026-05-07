@@ -2,10 +2,12 @@ import asyncio
 import contextlib
 import io
 import json
+import logging
 import os
 import runpy
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT_DIR / "scripts"
 CACHE_TTL_SECONDS = int(os.environ.get("BIOHUEZ_API_CACHE_TTL_SECONDS", "300"))
+CACHE_STALE_SECONDS = int(os.environ.get("BIOHUEZ_API_CACHE_STALE_SECONDS", "3600"))
+REFRESH_INTERVAL_SECONDS = int(os.environ.get("BIOHUEZ_API_REFRESH_INTERVAL_SECONDS", "240"))
+LOGGER = logging.getLogger("biohuez.api")
 
 ENDPOINTS = {
     "summary": "get_summary.py",
@@ -29,11 +34,43 @@ ENDPOINTS = {
     "competitor": "get_competitor.py",
     "seasonality": "get_seasonality.py",
     "cohorts": "get_cohorts.py",
+    "impact-analysis": "get_impact_analysis.py",
     "system-status": "get_system_status.py",
     "executive-insights": "get_executive_insights.py",
 }
 
-app = FastAPI(title="BioHuez Dashboard API", version="0.1.0")
+
+def endpoint_names_from_env(name: str, default: str) -> tuple[str, ...]:
+    raw = os.environ.get(name, default)
+    return tuple(endpoint.strip() for endpoint in raw.split(",") if endpoint.strip() in ENDPOINTS)
+
+
+WARMUP_ENDPOINTS = endpoint_names_from_env(
+    "BIOHUEZ_API_WARMUP_ENDPOINTS",
+    "summary,executive-insights,sales,finance,inventory,geography,returns,campaign,demographics",
+)
+REFRESH_ENDPOINTS = endpoint_names_from_env(
+    "BIOHUEZ_API_REFRESH_ENDPOINTS",
+    ",".join(WARMUP_ENDPOINTS),
+)
+
+cache: dict[str, dict[str, Any]] = {}
+refresh_tasks: dict[str, asyncio.Task[Any]] = {}
+script_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    warmup_task = asyncio.create_task(refresh_loop())
+    try:
+        yield
+    finally:
+        warmup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await warmup_task
+
+
+app = FastAPI(title="BioHuez Dashboard API", version="0.1.0", lifespan=lifespan)
 
 allowed_origins = [
     origin.strip()
@@ -48,9 +85,6 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
-
-cache: dict[str, dict[str, Any]] = {}
-script_lock = asyncio.Lock()
 
 
 def check_api_key(x_biohuez_api_key: str | None) -> None:
@@ -93,20 +127,79 @@ async def endpoint_payload(endpoint: str) -> Any:
     cached = cache.get(endpoint)
     if cached and cached["expires_at"] > now:
         return cached["payload"]
+    if cached and cached.get("payload") is not None and cached.get("stale_until", 0) > now:
+        schedule_refresh(endpoint)
+        return cached["payload"]
+
+    return await refresh_endpoint(endpoint, force=True)
+
+
+async def refresh_endpoint(endpoint: str, force: bool = False) -> Any:
+    now = time.time()
+    cached = cache.get(endpoint)
+    if not force and cached and cached["expires_at"] > now:
+        return cached["payload"]
 
     script_name = ENDPOINTS[endpoint]
     async with script_lock:
         cached = cache.get(endpoint)
-        if cached and cached["expires_at"] > time.time():
+        if not force and cached and cached["expires_at"] > time.time():
             return cached["payload"]
         payload = await asyncio.to_thread(run_json_script, script_name)
-        cache[endpoint] = {"payload": payload, "expires_at": time.time() + CACHE_TTL_SECONDS}
+        refreshed_at = time.time()
+        cache[endpoint] = {
+            "payload": payload,
+            "expires_at": refreshed_at + CACHE_TTL_SECONDS,
+            "stale_until": refreshed_at + CACHE_TTL_SECONDS + CACHE_STALE_SECONDS,
+            "refreshed_at": refreshed_at,
+        }
         return payload
+
+
+def schedule_refresh(endpoint: str) -> None:
+    task = refresh_tasks.get(endpoint)
+    if task and not task.done():
+        return
+    refresh_tasks[endpoint] = asyncio.create_task(refresh_endpoint_quietly(endpoint))
+
+
+async def refresh_endpoint_quietly(endpoint: str) -> None:
+    try:
+        await refresh_endpoint(endpoint, force=True)
+    except Exception:
+        LOGGER.exception("Failed to refresh %s", endpoint)
+
+
+async def refresh_many(endpoints: tuple[str, ...]) -> None:
+    for endpoint in endpoints:
+        await refresh_endpoint_quietly(endpoint)
+
+
+async def refresh_loop() -> None:
+    await refresh_many(WARMUP_ENDPOINTS)
+    while REFRESH_INTERVAL_SECONDS > 0:
+        await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
+        await refresh_many(REFRESH_ENDPOINTS)
 
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "endpoints": sorted(ENDPOINTS)}
+
+
+@app.get("/ready")
+async def ready(x_biohuez_api_key: str | None = Header(default=None)) -> dict[str, Any]:
+    check_api_key(x_biohuez_api_key)
+    now = time.time()
+    warmed = {
+        endpoint: {
+            "ready": bool(cache.get(endpoint, {}).get("payload") is not None),
+            "fresh": bool(cache.get(endpoint, {}).get("expires_at", 0) > now),
+            "refreshed_at": cache.get(endpoint, {}).get("refreshed_at"),
+        }
+        for endpoint in WARMUP_ENDPOINTS
+    }
+    return {"status": "ready" if all(item["ready"] for item in warmed.values()) else "warming", "endpoints": warmed}
 
 
 @app.get("/{endpoint}")
