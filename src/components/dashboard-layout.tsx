@@ -81,7 +81,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const pathname = usePathname();
   const activeNav = getActiveNav(pathname);
+  const activeIndex = Math.max(0, navItems.findIndex(item => item.label === activeNav));
+  const previousItem = navItems[(activeIndex - 1 + navItems.length) % navItems.length];
+  const nextItem = navItems[(activeIndex + 1) % navItems.length];
   const previewItem = navItems.find(item => item.label === previewNav);
+  const [reportMode, setReportMode] = useState(false);
 
   function handleRefresh() {
     setRefreshing(true);
@@ -98,6 +102,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem("biohuez-report-mode");
+    if (saved === "true") setReportMode(true);
+  }, []);
+
+  useEffect(() => {
     document.documentElement.style.setProperty("--biohuez-dark", theme.dark);
     document.documentElement.style.setProperty("--biohuez-canvas", theme.canvas);
     document.documentElement.style.setProperty("--biohuez-sage", theme.sage);
@@ -109,85 +118,144 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     setTheme(current => ({ ...current, [key]: value }));
   }
 
+  function toggleReportMode() {
+    setReportMode(current => {
+      window.localStorage.setItem("biohuez-report-mode", String(!current));
+      return !current;
+    });
+  }
+
   return (
-    <div className="commercial-shell">
-      <aside className={`commercial-sidebar ${sidebarOpen ? "is-open" : ""} ${collapsed ? "is-collapsed" : ""}`}>
-        <div className="commercial-brand">
-          <Link href="/" className="commercial-brand-link">
-            <Image
-              src="/biohuez-logo.png"
-              alt="BioHuez"
-              width={156}
-              height={50}
-              className="commercial-brand-logo"
-              priority
-            />
-          </Link>
-          <button className="commercial-icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation">
-            <X size={16} />
-          </button>
-        </div>
-
-        <nav className="commercial-nav">
-          {navItems.map(item => {
-            const isActive = activeNav === item.label;
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={`commercial-nav-item ${isActive ? "active" : ""}`}
-                onMouseEnter={() => setPreviewNav(item.label)}
-                onMouseLeave={() => setPreviewNav(null)}
-                onFocus={() => setPreviewNav(item.label)}
-                onBlur={() => setPreviewNav(null)}
-              >
-                <item.icon size={17} />
-                {!collapsed && (
-                  <>
-                    <span>{item.label}</span>
-                  </>
-                )}
+    <div className={`commercial-shell ${reportMode ? "is-report-mode" : ""}`}>
+      <aside className={`commercial-sidebar ${sidebarOpen ? "is-open" : ""} ${!reportMode && collapsed ? "is-collapsed" : ""} ${reportMode ? "is-report-sidebar" : ""}`}>
+        {reportMode ? (
+          <>
+            <div className="commercial-report-sidebar-brand">
+              <Link href="/" className="commercial-brand-link">
+                <Image
+                  src="/biohuez-logo.png"
+                  alt="BioHuez"
+                  width={142}
+                  height={46}
+                  className="commercial-brand-logo"
+                  priority
+                />
               </Link>
-            );
-          })}
-        </nav>
+              <button className="commercial-report-exit" onClick={toggleReportMode}>Exit</button>
+            </div>
 
-        <div className="commercial-sidebar-footer">
-          {!collapsed && (
-            <div className="commercial-health-card">
-              <div className="commercial-health-top">
-                <span>Data Freshness</span>
-                <span className="commercial-status-dot" />
-              </div>
-              <div className="commercial-health-date">Live data</div>
-              <button className="commercial-refresh-card-button" onClick={handleRefresh}>
-                <RefreshCw size={13} className={refreshing ? "spin" : ""} />
-                Refresh page
+            <div className="commercial-report-sidebar-title">
+              <span>Brand Report</span>
+              <strong>Slide {activeIndex + 1} of {navItems.length}</strong>
+            </div>
+
+            <nav className="commercial-report-slide-nav" aria-label="Report slides">
+              {navItems.map((item, index) => {
+                const isActive = item.label === activeNav;
+                return (
+                  <Link key={item.label} href={item.href} className={`commercial-report-slide-link ${isActive ? "active" : ""}`}>
+                    <span>{index + 1}</span>
+                    <img src={item.preview} alt="" />
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>{pageSubtitles[item.label] || "Dashboard page"}</small>
+                    </div>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="commercial-report-sidebar-footer">
+              <Link href={previousItem.href} className="commercial-report-step full">
+                <ChevronLeft size={15} />
+                <span>{previousItem.label}</span>
+              </Link>
+              <Link href={nextItem.href} className="commercial-report-step full">
+                <span>{nextItem.label}</span>
+                <ChevronRight size={15} />
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="commercial-brand">
+              <Link href="/" className="commercial-brand-link">
+                <Image
+                  src="/biohuez-logo.png"
+                  alt="BioHuez"
+                  width={156}
+                  height={50}
+                  className="commercial-brand-logo"
+                  priority
+                />
+              </Link>
+              <button className="commercial-icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation">
+                <X size={16} />
               </button>
             </div>
-          )}
-          {!collapsed && (
-            <div className="commercial-theme-card">
-              <button className="commercial-theme-toggle" onClick={() => setThemeOpen(!themeOpen)}>
-                Customize colors
-              </button>
-              {themeOpen && (
-                <div className="commercial-theme-grid">
-                  {Object.entries(theme).map(([key, value]) => (
-                    <label key={key}>
-                      <span>{key}</span>
-                      <input type="color" value={value} onChange={event => updateTheme(key as keyof typeof DEFAULT_THEME, event.target.value)} />
-                    </label>
-                  ))}
+
+            <nav className="commercial-nav">
+              {navItems.map(item => {
+                const isActive = activeNav === item.label;
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={`commercial-nav-item ${isActive ? "active" : ""}`}
+                    onMouseEnter={() => setPreviewNav(item.label)}
+                    onMouseLeave={() => setPreviewNav(null)}
+                    onFocus={() => setPreviewNav(item.label)}
+                    onBlur={() => setPreviewNav(null)}
+                  >
+                    <item.icon size={17} />
+                    {!collapsed && (
+                      <>
+                        <span>{item.label}</span>
+                      </>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="commercial-sidebar-footer">
+              {!collapsed && (
+                <div className="commercial-health-card">
+                  <div className="commercial-health-top">
+                    <span>Data Freshness</span>
+                    <span className="commercial-status-dot" />
+                  </div>
+                  <div className="commercial-health-date">Live data</div>
+                  <button className="commercial-refresh-card-button" onClick={handleRefresh}>
+                    <RefreshCw size={13} className={refreshing ? "spin" : ""} />
+                    Refresh page
+                  </button>
                 </div>
               )}
+              {!collapsed && (
+                <div className="commercial-theme-card">
+                  <button className="commercial-theme-toggle" onClick={() => setThemeOpen(!themeOpen)}>
+                    Customize colors
+                  </button>
+                  {themeOpen && (
+                    <div className="commercial-theme-grid">
+                      {Object.entries(theme).map(([key, value]) => (
+                        <label key={key}>
+                          <span>{key}</span>
+                          <input type="color" value={value} onChange={event => updateTheme(key as keyof typeof DEFAULT_THEME, event.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button className="commercial-collapse-button" onClick={() => setCollapsed(!collapsed)} aria-label="Collapse navigation">
+                {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                {!collapsed && <span>Collapse</span>}
+              </button>
             </div>
-          )}
-          <button className="commercial-collapse-button" onClick={() => setCollapsed(!collapsed)} aria-label="Collapse navigation">
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            {!collapsed && <span>Collapse</span>}
-          </button>
-        </div>
+          </>
+        )}
       </aside>
 
       <div className={`commercial-sidebar-preview ${previewItem ? "is-visible" : ""} ${collapsed ? "is-collapsed" : ""}`}>
@@ -211,6 +279,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <h1>{activeNav}</h1>
               {activeNav !== "Sales" && <p>{pageSubtitles[activeNav] || ""}</p>}
             </div>
+            <div className="commercial-report-controls">
+              <button className={`commercial-report-toggle ${reportMode ? "active" : ""}`} onClick={toggleReportMode}>
+                {reportMode ? "Exit report" : "Report mode"}
+              </button>
+              <Link href={previousItem.href} className="commercial-report-step" aria-label={`Previous: ${previousItem.label}`}>
+                <ChevronLeft size={15} />
+                <span>{previousItem.label}</span>
+              </Link>
+              <Link href={nextItem.href} className="commercial-report-step" aria-label={`Next: ${nextItem.label}`}>
+                <span>{nextItem.label}</span>
+                <ChevronRight size={15} />
+              </Link>
+            </div>
           </div>
           <div className="commercial-topbar-controls">
             <Suspense fallback={null}>
@@ -220,6 +301,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="commercial-main">
+          {reportMode && (
+            <div className="commercial-report-banner">
+              <div>
+                <span>Slide {activeIndex + 1} of {navItems.length}</span>
+                <strong>{activeNav}</strong>
+              </div>
+              <p>{pageSubtitles[activeNav] || "Dashboard page"}</p>
+            </div>
+          )}
           <Suspense fallback={null}>
             {children}
           </Suspense>

@@ -197,16 +197,6 @@ function fmtSignedPct(n: number | null | undefined) {
   const sign = n > 0 ? '+' : ''
   return sign + n.toFixed(1) + '%'
 }
-function filterByDays(sales: SalesRow[], ads: AdsRow[], days: number) {
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - days)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-  return {
-    sales: sales.filter(r => r.date >= cutoffStr),
-    ads: ads.filter(r => r.date >= cutoffStr),
-  }
-}
-
 function parseDate(value: string | null | undefined) {
   if (!value) return null
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00`)
@@ -324,23 +314,6 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], gra
   return { chartData, skus: Array.from(skuSet).sort() }
 }
 
-function computeKPIs(sales: SalesRow[], ads: AdsRow[]) {
-  const totalRevenue = sales.reduce((s, r) => s + (r.revenue || 0), 0)
-  const totalOrders = sales.reduce((s, r) => s + (r.orders || 0), 0)
-  const totalUnits = sales.reduce((s, r) => s + (r.units || 0), 0)
-  const totalSessions = sales.reduce((s, r) => s + (r.sessions || 0), 0)
-  const totalAdSpend = ads.reduce((s, r) => s + (r.spend || 0), 0)
-  const totalAdSales = ads.reduce((s, r) => s + (r.sales_1d || 0), 0)
-  const totalAdOrders = ads.reduce((s, r) => s + (r.purchases_1d || 0), 0)
-  const asp = totalUnits > 0 ? totalRevenue / totalUnits : 0
-  const pROAS = totalAdSpend > 0 ? (totalAdSales - 4.93 * totalUnits) / totalAdSpend : 0
-  const cvr = totalSessions > 0 ? (totalUnits / totalSessions) * 100 : 0
-  const organicSalesPct = totalRevenue > 0 ? (totalRevenue - totalAdSales) / totalRevenue * 100 : 0
-  const cac = totalAdOrders > 0 ? totalAdSpend / totalAdOrders : 0
-  const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0
-  return { asp, pROAS, cvr, organicSalesPct, cac, aov }
-}
-
 export default function SalesPage() {
   const [data, setData] = useState<SalesData | null>(null)
   const [demographics, setDemographics] = useState<DemographicsData | null>(null)
@@ -444,12 +417,10 @@ export default function SalesPage() {
     interval: filters.interval,
     granularity: filters.granularity,
   }
-  const previousOverview = buildOverviewChart(
-    filterByDashboardState(allSales, previousFilters, row => row.date, row => row.sku),
-    filterByDashboardState(allAds, previousFilters, row => row.date),
-    filterByDashboardState(allBsr, previousFilters, row => row.date, row => row.sku_name),
-    filters.granularity,
-  )
+  const previousSales = filterByDashboardState(allSales, previousFilters, row => row.date, row => row.sku)
+  const previousAds = filterByDashboardState(allAds, previousFilters, row => row.date)
+  const previousBsr = filterByDashboardState(allBsr, previousFilters, row => row.date, row => row.sku_name)
+  const previousOverview = buildOverviewChart(previousSales, previousAds, previousBsr, filters.granularity)
   const chartSkus = Array.from(new Set([...skus, ...previousOverview.skus])).sort()
   const bsrAsinSet = new Set<string>()
   const bsrDateMap: Record<string, Record<string, number>> = {}
@@ -527,22 +498,35 @@ export default function SalesPage() {
       CAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
       blendedCAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
     }))
-  const kpi5w = computeKPIs(...Object.values(filterByDays(sales, ads, 35)) as [SalesRow[], AdsRow[]])
-  const kpi10w = computeKPIs(...Object.values(filterByDays(sales, ads, 70)) as [SalesRow[], AdsRow[]])
-  const currentProas = totalAdSpend > 0 ? (totalAdSales - 4.93 * totalUnits) / totalAdSpend : 0
-  const overviewKpis = [
-    { key: 'revenue', label: 'Total Revenue', value: fmtMoney(totalRevenue) },
-    { key: 'orders', label: 'Total Orders', value: fmt(totalOrders) },
-    { key: 'units', label: 'Total Units', value: fmt(totalUnits) },
-    { key: 'aov', label: 'AOV', value: fmtMoney2(aov) },
-    { key: 'acos', label: 'ACOS', value: fmtPct(acos), status: acos > 40 ? 'alert' as const : acos > 25 ? 'warn' as const : 'normal' as const },
-    { key: 'roas', label: 'ROAS', value: roas.toFixed(2) + 'x' },
-    { key: 'proas', label: 'pROAS', value: currentProas.toFixed(2) + 'x', status: currentProas < 1 ? 'alert' as const : currentProas < 2 ? 'warn' as const : 'normal' as const },
-    { key: 'asp', label: 'ASP', value: fmtMoney2(kpi5w.asp), sublabel: 'Last 5 weeks' },
-    { key: 'cac', label: 'CAC', value: fmtMoney2(kpi5w.cac), sublabel: 'Last 5 weeks' },
-    { key: 'organic', label: 'Organic Sales %', value: fmtPct(kpi5w.organicSalesPct), sublabel: 'Last 5 weeks' },
-  ]
-  const selectedOverviewKpis = overviewKpis.filter(item => visibleKpis.includes(item.key))
+  function buildOverviewKpis(periodSales: SalesRow[], periodAds: AdsRow[], sublabel?: string) {
+    const revenue = periodSales.reduce((s, r) => s + (r.revenue || 0), 0)
+    const orders = periodSales.reduce((s, r) => s + (r.orders || 0), 0)
+    const units = periodSales.reduce((s, r) => s + (r.units || 0), 0)
+    const adSpend = periodAds.reduce((s, r) => s + (r.spend || 0), 0)
+    const adSales = periodAds.reduce((s, r) => s + (r.sales_1d || 0), 0)
+    const adOrders = periodAds.reduce((s, r) => s + (r.purchases_1d || 0), 0)
+    const periodAov = orders > 0 ? revenue / orders : 0
+    const periodAcos = adSales > 0 ? adSpend / adSales * 100 : 0
+    const periodRoas = adSpend > 0 ? adSales / adSpend : 0
+    const periodProas = adSpend > 0 ? (adSales - 4.93 * units) / adSpend : 0
+    const periodAsp = units > 0 ? revenue / units : 0
+    const periodCac = adOrders > 0 ? adSpend / adOrders : 0
+    const periodOrganicSalesPct = revenue > 0 ? (revenue - adSales) / revenue * 100 : 0
+    return [
+      { key: 'revenue', label: 'Total Revenue', value: fmtMoney(revenue), sublabel },
+      { key: 'orders', label: 'Total Orders', value: fmt(orders), sublabel },
+      { key: 'units', label: 'Total Units', value: fmt(units), sublabel },
+      { key: 'aov', label: 'AOV', value: fmtMoney2(periodAov), sublabel },
+      { key: 'acos', label: 'ACOS', value: fmtPct(periodAcos), sublabel, status: periodAcos > 40 ? 'alert' as const : periodAcos > 25 ? 'warn' as const : 'normal' as const },
+      { key: 'roas', label: 'ROAS', value: periodRoas.toFixed(2) + 'x', sublabel },
+      { key: 'proas', label: 'pROAS', value: periodProas.toFixed(2) + 'x', sublabel, status: periodProas < 1 ? 'alert' as const : periodProas < 2 ? 'warn' as const : 'normal' as const },
+      { key: 'asp', label: 'ASP', value: fmtMoney2(periodAsp), sublabel },
+      { key: 'cac', label: 'CAC', value: fmtMoney2(periodCac), sublabel },
+      { key: 'organic', label: 'Organic Sales %', value: fmtPct(periodOrganicSalesPct), sublabel },
+    ]
+  }
+  const overviewKpis = buildOverviewKpis(sales, ads)
+  const previousOverviewKpis = buildOverviewKpis(previousSales, previousAds)
 
   function toggleKpi(key: string) {
     setViewSaved(false)
@@ -558,6 +542,29 @@ export default function SalesPage() {
     window.localStorage.setItem(SALES_VIEW_STORAGE_KEY, JSON.stringify({ visibleKpis, visibleSeries }))
     setViewSaved(true)
   }
+
+  function renderKpiGrid(items: typeof overviewKpis, title?: string, editable = false) {
+    const selectedItems = items.filter(item => visibleKpis.includes(item.key))
+    return (
+      <div className="sales-kpi-panel">
+        {title && <div className="sales-kpi-panel-title">{title}</div>}
+        <div className="sales-overview-kpi-grid">
+          {selectedItems.map(item => (
+            <div key={item.key} className={`sales-widget-card ${editable && editingView ? 'is-editing' : ''}`}>
+              {editable && editingView && <button className="sales-widget-remove" onClick={() => toggleKpi(item.key)}>×</button>}
+              <MetricCard
+                label={item.label}
+                value={item.value}
+                sublabel={item.sublabel}
+                status={item.status}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   const repeatMonthly = demographics?.repeat_monthly || []
   const sortedMonthly = [...repeatMonthly]
     .filter(r => r.period != null)
@@ -694,19 +701,14 @@ export default function SalesPage() {
                 </div>
               )}
 
-              <div className="sales-overview-kpi-grid">
-                {selectedOverviewKpis.map(item => (
-                  <div key={item.key} className={`sales-widget-card ${editingView ? 'is-editing' : ''}`}>
-                    {editingView && <button className="sales-widget-remove" onClick={() => toggleKpi(item.key)}>×</button>}
-                    <MetricCard
-                      label={item.label}
-                      value={item.value}
-                      sublabel={item.sublabel}
-                      status={item.status}
-                    />
-                  </div>
-                ))}
-              </div>
+              {comparisonActive ? (
+                <div className="sales-compare-grid sales-compare-kpis">
+                  {renderKpiGrid(overviewKpis, 'Current period', true)}
+                  {renderKpiGrid(previousOverviewKpis, 'Previous period')}
+                </div>
+              ) : (
+                renderKpiGrid(overviewKpis, undefined, true)
+              )}
             </section>
 
             <section>
