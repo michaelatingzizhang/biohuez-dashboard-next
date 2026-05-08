@@ -241,7 +241,7 @@ export default function GeographyPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
                     <YAxis type="category" dataKey="sku_name" tick={{ fontSize: 11 }} width={90} />
-                    <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                    <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
                     <Bar dataKey="revenue" name="Revenue" radius={[0, 4, 4, 0]}>
                       {bySku.map(entry => (
                         <Cell key={entry.sku} fill={SKU_COLORS[entry.sku] || '#6B8F61'} />
@@ -262,7 +262,7 @@ export default function GeographyPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
                 <YAxis type="category" dataKey="state" tick={{ fontSize: 11 }} width={55} />
-                <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
                 <Bar dataKey="revenue" name="Revenue" radius={[0, 4, 4, 0]}>
                   {states.map(entry => (
                     <Cell key={entry.state} fill={barColor(entry.revenue)} />
@@ -283,7 +283,7 @@ export default function GeographyPage() {
                       <XAxis dataKey="state" tick={{ fontSize: 11 }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
-                      <Tooltip formatter={(value: unknown, name: unknown) => name === 'Revenue' ? '$' + Number(value).toFixed(2) : Number(value).toLocaleString()} />
+                      <Tooltip formatter={(value: unknown, name: unknown) => name === 'Revenue' ? fmtMoney(Number(value)) : Number(value).toLocaleString()} />
                       <Legend />
                       <Bar yAxisId="left" dataKey="units" name="Units" fill="#6B8F61" />
                       <Bar yAxisId="right" dataKey="revenue" name="Revenue" fill="#2D4A27" />

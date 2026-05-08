@@ -123,7 +123,7 @@ const ASIN_LABELS: Record<string, string> = {
 
 function fmtMoney(n: number | null | undefined) {
   if (n == null) return '—'
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 function fmtRank(n: number | null | undefined) {
@@ -404,7 +404,7 @@ export default function CompetitorPage() {
                     {ASIN_LABELS[row.asin] || row.asin}
                   </div>
                   <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1A1A1A' }}>BSR #{row.bsr}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#888', marginTop: 2 }}>{row.bsr_category} · ${row.price?.toFixed(2)}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#888', marginTop: 2 }}>{row.bsr_category} · {fmtMoney(row.price)}</div>
                   <div style={{ fontSize: '0.7rem', color: '#aaa', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
                 </div>
               ))}
@@ -472,7 +472,7 @@ export default function CompetitorPage() {
                     {[...competitor].sort((a, b) => a.bsr - b.bsr).map((row, index) => (
                       <tr key={`${row.asin}-${row.captured_date}-${row.bsr_category}-${index}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
                         <td style={{ padding: '8px 12px', color: '#888', fontSize: '0.75rem' }}>{ASIN_LABELS[row.asin] || row.asin}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>${row.price?.toFixed(2)}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.price)}</td>
                         <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>#{row.bsr}</td>
                         <td style={{ padding: '8px 12px' }}>{row.bsr_category}</td>
                         <td style={{ padding: '8px 12px', color: '#888', fontSize: '0.75rem' }}>{row.captured_date?.slice(0, 10)}</td>
@@ -520,7 +520,7 @@ export default function CompetitorPage() {
                       </div>
                       <div style={{ fontSize: '0.75rem', color: '#888', marginTop: 2 }}>
                         {row.review_count != null ? `${row.review_count.toLocaleString()} reviews` : '—'}
-                        {row.price != null ? ` · $${row.price.toFixed(2)}` : ''}
+                        {row.price != null ? ` · ${fmtMoney(row.price)}` : ''}
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#aaa', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row.name}

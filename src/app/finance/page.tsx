@@ -248,7 +248,7 @@ export default function FinancePage() {
             <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'k'} />
-            <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+            <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
             <Legend />
             <Bar dataKey="gross_sales" fill="#B8D4AE" name="Gross Sales" />
             <Bar dataKey="amazon_fees" fill="#E67E22" name="Amazon Fees" />
@@ -363,7 +363,7 @@ export default function FinancePage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={90} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
-                <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
                 <Bar dataKey="value" name="Per Unit">
                   {perUnit.map(row => (
                     <Cell key={row.metric} fill={row.amount < 0 ? '#C0392B' : row.metric.includes('contribution') ? '#1B4D2E' : '#6B8F61'} />
@@ -461,7 +461,7 @@ export default function FinancePage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} />
-                  <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                  <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
                   <Legend />
                   <Line type="monotone" dataKey="asp_per_unit" stroke="#2D4A27" strokeWidth={2} dot name="ASP / Unit" connectNulls />
                   <Line type="monotone" dataKey="net_sales" stroke="#2980B9" strokeWidth={2} dot name="Net Sales" connectNulls />

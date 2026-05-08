@@ -36,6 +36,11 @@ type ExecutiveInsights = {
   sources: { section: string; href: string; error?: string; signal_count: number }[]
 }
 
+function fmtMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
 export default function SummaryPage() {
   const [rawSales, setSales] = useState<SalesRow[]>([])
   const [rawInventory, setInventory] = useState<InvRow[]>([])
@@ -181,11 +186,11 @@ export default function SummaryPage() {
       )}
 
       <div className="dashboard-kpi-grid-tight">
-        <MetricCard label="Total Revenue" value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} sublabel={sublabel} />
+        <MetricCard label="Total Revenue" value={fmtMoney(totalRevenue)} sublabel={sublabel} />
         <MetricCard label="Total Orders" value={totalOrders.toLocaleString()} sublabel={sublabel} />
         <MetricCard label="Units Sold" value={totalUnits.toLocaleString()} sublabel={sublabel} />
-        <MetricCard label="Avg Order Value" value={`$${aov.toFixed(2)}`} sublabel={sublabel} />
-        <MetricCard label="Avg Selling Price" value={`$${asp.toFixed(2)}`} sublabel={sublabel} />
+        <MetricCard label="Avg Order Value" value={fmtMoney(aov)} sublabel={sublabel} />
+        <MetricCard label="Avg Selling Price" value={fmtMoney(asp)} sublabel={sublabel} />
       </div>
 
       {/* Inventory Strip */}
@@ -212,11 +217,11 @@ export default function SummaryPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v: string) => v.slice(5)} />
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v: number) => fmtMoney(v)} />
               <Tooltip formatter={(v: unknown, name: unknown) => {
                 const num = typeof v === 'number' ? v : 0
                 const label = typeof name === 'string' ? name : ''
-                return label === 'asp' ? [`$${num.toFixed(2)}`, 'ASP'] : [`$${num.toLocaleString()}`, label]
+                return label === 'asp' ? [fmtMoney(num), 'ASP'] : [num.toLocaleString(), label]
               }} />
               <Legend />
               {skuNames.map(sku => (
@@ -304,8 +309,8 @@ export default function SummaryPage() {
                 <BarChart data={aspBarData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }} barCategoryGap="40%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
                   <XAxis dataKey="sku" tick={{ fontSize: 10 }} />
-                  <YAxis tickFormatter={(v: number) => `$${v.toFixed(2)}`} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: unknown) => [`$${Number(v).toFixed(2)}`, 'ASP']} />
+                  <YAxis tickFormatter={(v: number) => fmtMoney(v)} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: unknown) => [fmtMoney(Number(v)), 'ASP']} />
                   <Bar dataKey="asp" name="ASP" radius={[4, 4, 0, 0]}>
                     {aspBarData.map((entry, i) => (
                       <Cell key={i} fill={SKU_COLORS[entry.sku] || '#ccc'} />

@@ -16,13 +16,18 @@ This tracks the old `biohuez-dashboard` Streamlit pages against the new Next.js 
 - Seasonality: day/month/week/hour ordering patterns, forecast and momentum signals.
 - System Status: database/table freshness and row counts.
 - Impact Analysis: marketing action timeline, before/after phase comparisons, SP ads impact, BSR movement, search query shifts, demographics highlights.
+- Demographics: monthly/weekly Streamlit profile KPIs, latest snapshot, period comparison, and trend modules.
+- Campaign: war room KPIs, A/B/C/D scenario logic, cluster action map, tier profitability, funnel diagnostics, and price benchmark.
 
 ## Needs Deeper Review Against Streamlit
 
-- Demographics: old Streamlit has a very deep monthly/weekly comparison workflow; the new page has the main repeat purchase and segment modules but should still be reviewed for exact month-vs-month and weekly snapshot parity.
-- Campaign: old Streamlit has detailed bubble/tier/scenario tables; the new page has action candidates, tier performance, and cluster opportunities but should be reviewed for exact scenario table parity.
+- Cohorts: old Streamlit has LTV, acquisition/repeat revenue, repeat-rate charts, cohort summary table, and LTV/CAC. The new page currently has retention proxy and cohort size only.
+- Competitor: old Streamlit has price history, rating history, full history expanders, and refresh workflow. The new page has the main BSR/review/intelligence modules but should get polish if Tingzi wants exact parity.
+- Demographics: old Streamlit has manual Month A/Month B and Week A/Week B selectors. New page shows default latest-vs-previous comparisons.
 - Impact Analysis: migrated as a functional page; should be reviewed after real stakeholder feedback because some old explanatory callouts were converted into data-driven takeaways.
 - DB Explorer: not migrated intentionally because it is an internal developer/admin tool, not a client-facing dashboard page.
+
+Detailed review: `docs/streamlit-parity-review.md`.
 
 ## Review Format
 

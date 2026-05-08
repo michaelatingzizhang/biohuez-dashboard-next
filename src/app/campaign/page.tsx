@@ -200,7 +200,7 @@ function latestPeriod(rows: SearchTermRow[]) {
 
 function fmtMoney(n: number | null | undefined) {
   if (n == null) return '—'
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 function fmtPct(n: number | null | undefined) {
   if (n == null) return '—'
@@ -399,7 +399,7 @@ export default function CampaignPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + v} />
-                <Tooltip formatter={(value: unknown) => '$' + Number(value).toFixed(2)} />
+                <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
                 <Legend />
                 <Bar dataKey="sales" fill="#B8D4AE" name="Ad Sales" />
                 <Line type="monotone" dataKey="spend" stroke="#E67E22" strokeWidth={2} dot={false} name="Spend" />

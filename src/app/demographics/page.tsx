@@ -437,7 +437,7 @@ export default function DemographicsPage() {
                     <td style={{ padding: '8px 12px' }}>{row.period}</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.orders}</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtPct(row.repeat_pct)}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>${row.revenue.toFixed(2)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
                   </tr>
                 ))}
               </tbody>
