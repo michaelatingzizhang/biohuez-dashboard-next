@@ -59,6 +59,74 @@ const pageSubtitles: Record<string, string> = {
   "System Status": "MotherDuck, Amazon SP-API, Ads API, sync freshness, and endpoint health",
 };
 
+const pageNarratives: Record<string, { message: string; watch: string; action: string }> = {
+  Summary: {
+    message: "Executive view should quickly show whether the brand is healthy enough for daily operating decisions.",
+    watch: "Revenue momentum, margin pressure, inventory risk, and API/data freshness.",
+    action: "Use this slide as the opening readout before drilling into page-level drivers.",
+  },
+  Sales: {
+    message: "Sales performance is the primary story: revenue, ASP, ad spend, and BSR should explain what changed.",
+    watch: "KPI widgets, SKU time series, traffic quality, and ad spend mix.",
+    action: "Review Sales first when the business question is growth, conversion, or SKU performance.",
+  },
+  Finance: {
+    message: "Finance should explain whether reported sales are converting into contribution after fees and refunds.",
+    watch: "Settlement gaps, fee drag, refunds, margin trend, and calendar versus payout timing.",
+    action: "Use this slide to identify where revenue is leaking into Amazon costs or refund pressure.",
+  },
+  Inventory: {
+    message: "Inventory should surface operating risk before it becomes a sales constraint.",
+    watch: "Coverage, low-stock SKUs, aging units, inbound timing, and fulfillment-center imbalance.",
+    action: "Use this slide to prioritize restock and inventory cleanup decisions.",
+  },
+  Returns: {
+    message: "Returns should show which products or reasons are creating refund drag.",
+    watch: "Return rate spikes, reason mix, refund value, and SKU-level concentration.",
+    action: "Use this slide to connect quality, listing, or customer-fit issues to financial impact.",
+  },
+  Campaign: {
+    message: "Campaigns should show whether paid spend is creating profitable demand.",
+    watch: "ACOS, ROAS, pROAS, clicks, conversion, campaign type, and search-term efficiency.",
+    action: "Use this slide to decide whether to scale, pause, or restructure spend.",
+  },
+  Demographics: {
+    message: "Demographics should explain who is buying and whether repeat behavior is improving.",
+    watch: "Customer mix, repeat purchase behavior, cohorts, segments, and revenue contribution.",
+    action: "Use this slide to guide positioning, retention, and brand onboarding narratives.",
+  },
+  Geography: {
+    message: "Geography should show where demand is concentrated and whether regional mix is shifting.",
+    watch: "State/city concentration, SKU mix by region, shipment geography, and growth pockets.",
+    action: "Use this slide for regional demand planning and market expansion conversations.",
+  },
+  Seasonality: {
+    message: "Seasonality should make demand timing predictable enough for inventory and campaign planning.",
+    watch: "Weekly patterns, seasonal peaks, recurring dips, and category timing.",
+    action: "Use this slide to plan stock, ad pacing, and seasonal promotions.",
+  },
+  Cohorts: {
+    message: "Cohorts should show whether customers are coming back and compounding value over time.",
+    watch: "Retention curves, repeat behavior, cohort revenue, and LTV movement.",
+    action: "Use this slide when the question is customer quality rather than one-time sales.",
+  },
+  Competitor: {
+    message: "Competitor analysis should show where BioHuez is positioned against the market.",
+    watch: "Price, visibility, BSR movement, competitive offers, and category signals.",
+    action: "Use this slide to support pricing, listing, and positioning decisions.",
+  },
+  "Impact Analysis": {
+    message: "Impact analysis should isolate what changed after a specific action.",
+    watch: "Before/after movement in traffic, conversion, sales, BSR, and ad efficiency.",
+    action: "Use this slide for experiments such as artwork changes, listing edits, or campaign shifts.",
+  },
+  "System Status": {
+    message: "System status should prove whether the dashboard data is trustworthy and current.",
+    watch: "MotherDuck access, SP-API freshness, Ads API status, script errors, and endpoint health.",
+    action: "Use this slide before demos or client reviews to confirm data readiness.",
+  },
+};
+
 const DEFAULT_THEME = {
   dark: "#275719",
   canvas: "#F4EEE5",
@@ -86,6 +154,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const nextItem = navItems[(activeIndex + 1) % navItems.length];
   const previewItem = navItems.find(item => item.label === previewNav);
   const [reportMode, setReportMode] = useState(false);
+  const [reportView, setReportView] = useState<"slide" | "sorter">("slide");
+  const activeNarrative = pageNarratives[activeNav] || pageNarratives.Summary;
 
   function handleRefresh() {
     setRefreshing(true);
@@ -104,6 +174,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const saved = window.localStorage.getItem("biohuez-report-mode");
     if (saved === "true") setReportMode(true);
+    const savedReportView = window.localStorage.getItem("biohuez-report-view");
+    if (savedReportView === "sorter") setReportView("sorter");
   }, []);
 
   useEffect(() => {
@@ -123,6 +195,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem("biohuez-report-mode", String(!current));
       return !current;
     });
+  }
+
+  function updateReportView(value: "slide" | "sorter") {
+    setReportView(value);
+    window.localStorage.setItem("biohuez-report-view", value);
   }
 
   return (
@@ -149,6 +226,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <strong>Slide {activeIndex + 1} of {navItems.length}</strong>
             </div>
 
+            <div className="commercial-report-view-toggle">
+              <button className={reportView === "slide" ? "active" : ""} onClick={() => updateReportView("slide")}>Slide</button>
+              <button className={reportView === "sorter" ? "active" : ""} onClick={() => updateReportView("sorter")}>Sorter</button>
+            </div>
+
             <nav className="commercial-report-slide-nav" aria-label="Report slides">
               {navItems.map((item, index) => {
                 const isActive = item.label === activeNav;
@@ -158,7 +240,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     <img src={item.preview} alt="" />
                     <div>
                       <strong>{item.label}</strong>
-                      <small>{pageSubtitles[item.label] || "Dashboard page"}</small>
+                      <small>{pageNarratives[item.label]?.message || pageSubtitles[item.label] || "Dashboard page"}</small>
                     </div>
                   </Link>
                 );
@@ -283,6 +365,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <button className={`commercial-report-toggle ${reportMode ? "active" : ""}`} onClick={toggleReportMode}>
                 {reportMode ? "Exit report" : "Report mode"}
               </button>
+              {reportMode && (
+                <button className={`commercial-report-toggle ${reportView === "sorter" ? "active" : ""}`} onClick={() => updateReportView(reportView === "sorter" ? "slide" : "sorter")}>
+                  {reportView === "sorter" ? "Slide view" : "Slide sorter"}
+                </button>
+              )}
               <Link href={previousItem.href} className="commercial-report-step" aria-label={`Previous: ${previousItem.label}`}>
                 <ChevronLeft size={15} />
                 <span>{previousItem.label}</span>
@@ -301,18 +388,61 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="commercial-main">
-          {reportMode && (
+          {reportMode && reportView === "slide" && (
             <div className="commercial-report-banner">
               <div>
                 <span>Slide {activeIndex + 1} of {navItems.length}</span>
                 <strong>{activeNav}</strong>
               </div>
-              <p>{pageSubtitles[activeNav] || "Dashboard page"}</p>
+              <p>{activeNarrative.message}</p>
             </div>
           )}
-          <Suspense fallback={null}>
-            {children}
-          </Suspense>
+          {reportMode && reportView === "slide" && (
+            <section className="commercial-report-insights" aria-label="Report slide insights">
+              <div>
+                <span>Key Message</span>
+                <strong>{activeNarrative.message}</strong>
+              </div>
+              <div>
+                <span>Watch</span>
+                <strong>{activeNarrative.watch}</strong>
+              </div>
+              <div>
+                <span>Action</span>
+                <strong>{activeNarrative.action}</strong>
+              </div>
+            </section>
+          )}
+          {reportMode && reportView === "sorter" ? (
+            <section className="commercial-slide-sorter" aria-label="Report slide sorter">
+              <div className="commercial-slide-sorter-heading">
+                <div>
+                  <span>Brand Report</span>
+                  <strong>Slide Sorter</strong>
+                </div>
+                <p>Review every dashboard page as a reporting slide, then open any slide to continue the narrative.</p>
+              </div>
+              <div className="commercial-slide-sorter-grid">
+                {navItems.map((item, index) => (
+                  <Link key={item.label} href={item.href} className={`commercial-slide-sorter-card ${item.label === activeNav ? "active" : ""}`} onClick={() => updateReportView("slide")}>
+                    <div className="commercial-slide-sorter-preview">
+                      <span>{index + 1}</span>
+                      <img src={item.preview} alt="" />
+                    </div>
+                    <div className="commercial-slide-sorter-copy">
+                      <strong>{item.label}</strong>
+                      <p>{pageNarratives[item.label]?.message || pageSubtitles[item.label]}</p>
+                      <small>{pageNarratives[item.label]?.action}</small>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <Suspense fallback={null}>
+              {children}
+            </Suspense>
+          )}
         </main>
       </div>
 
