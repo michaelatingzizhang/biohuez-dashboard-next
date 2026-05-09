@@ -1165,16 +1165,16 @@
   }
 
   .dashboard-filter-action-button {
-    min-height: 32px;
+    min-height: 38px;
     border: 1px solid rgba(34, 44, 38, 0.1);
-    border-radius: 9px;
+    border-radius: 999px;
     background: #f6f8f4;
     color: var(--biohuez-dark);
-    padding: 6px 10px;
-    font-size: 0.76rem;
+    padding: 0 12px;
+    font-size: 0.78rem;
     font-weight: 880;
     cursor: pointer;
-    text-align: right;
+    text-align: center;
   }
 
   .dashboard-filter-action-button.active,

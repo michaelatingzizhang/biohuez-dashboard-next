@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   BarChart3,
@@ -147,6 +147,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [previewNav, setPreviewNav] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [theme, setTheme] = useState(DEFAULT_THEME);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const pathname = usePathname();
   const activeNav = getActiveNav(pathname);
   const activeIndex = Math.max(0, navItems.findIndex(item => item.label === activeNav));
@@ -156,6 +158,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [reportMode, setReportMode] = useState(false);
   const [reportView, setReportView] = useState<"slide" | "sorter">("slide");
   const activeNarrative = pageNarratives[activeNav] || pageNarratives.Summary;
+  const comparisonActive = searchParams.get("compare") === "previous";
 
   function handleRefresh() {
     setRefreshing(true);
@@ -200,6 +203,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   function updateReportView(value: "slide" | "sorter") {
     setReportView(value);
     window.localStorage.setItem("biohuez-report-view", value);
+  }
+
+  function toggleCompare() {
+    const next = new URLSearchParams(searchParams.toString());
+    if (comparisonActive) next.delete("compare");
+    else next.set("compare", "previous");
+    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`);
   }
 
   return (
@@ -365,19 +375,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <button className={`commercial-report-toggle ${reportMode ? "active" : ""}`} onClick={toggleReportMode}>
                 {reportMode ? "Exit report" : "Report mode"}
               </button>
+              <button className={`commercial-report-toggle ${comparisonActive ? "active" : ""}`} onClick={toggleCompare}>
+                Compare previous period
+              </button>
               {reportMode && (
                 <button className={`commercial-report-toggle ${reportView === "sorter" ? "active" : ""}`} onClick={() => updateReportView(reportView === "sorter" ? "slide" : "sorter")}>
                   {reportView === "sorter" ? "Slide view" : "Slide sorter"}
                 </button>
               )}
-              <Link href={previousItem.href} className="commercial-report-step" aria-label={`Previous: ${previousItem.label}`}>
-                <ChevronLeft size={15} />
-                <span>{previousItem.label}</span>
-              </Link>
-              <Link href={nextItem.href} className="commercial-report-step" aria-label={`Next: ${nextItem.label}`}>
-                <span>{nextItem.label}</span>
-                <ChevronRight size={15} />
-              </Link>
             </div>
           </div>
           <div className="commercial-topbar-controls">

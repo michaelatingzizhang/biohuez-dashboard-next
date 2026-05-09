@@ -85,13 +85,6 @@ export function DashboardFilters() {
     router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ''}`)
   }
 
-  function toggleCompare() {
-    const next = new URLSearchParams(params.toString())
-    if (comparisonActive) next.delete('compare')
-    else next.set('compare', 'previous')
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ''}`)
-  }
-
   function saveFilterView() {
     window.localStorage.setItem('biohuez-filter-view', JSON.stringify({
       from: filters.from,
@@ -184,16 +177,16 @@ export function DashboardFilters() {
 
       <div className="dashboard-custom-group">
         <div className="dashboard-interval-label">Custom</div>
-        <div className="dashboard-custom-dates">
-          <FilterInput label="From" type="date" value={filters.from} onChange={value => updateFilter('from', value)} compact />
-          <FilterInput label="To" type="date" value={filters.to} onChange={value => updateFilter('to', value)} compact />
-        </div>
         <div className="dashboard-granularity-toggle">
           {['daily', 'weekly'].map(value => (
             <button key={value} onClick={() => setGranularity(value)} className={filters.granularity === value ? 'active' : ''}>
               {value === 'daily' ? 'Daily' : 'Weekly'}
             </button>
           ))}
+        </div>
+        <div className="dashboard-custom-dates">
+          <FilterInput label="From" type="date" value={filters.from} onChange={value => updateFilter('from', value)} compact />
+          <FilterInput label="To" type="date" value={filters.to} onChange={value => updateFilter('to', value)} compact />
         </div>
       </div>
 
@@ -219,9 +212,6 @@ export function DashboardFilters() {
       <div className="dashboard-filter-actions">
         <button className="dashboard-filter-action-button" onClick={saveFilterView}>{filterSaved ? 'Saved' : 'Save view'}</button>
         <button className="dashboard-filter-action-button" onClick={resetFilters} disabled={!hasActiveFilters}>Reset</button>
-        <button onClick={toggleCompare} className={`dashboard-filter-action-button ${comparisonActive ? 'active' : ''}`}>
-          Compare previous period
-        </button>
       </div>
       </div>
     </div>
