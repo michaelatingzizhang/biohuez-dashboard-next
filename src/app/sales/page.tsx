@@ -22,11 +22,17 @@ const SKU_COLORS: Record<string, string> = {
   'Red': '#C0392B',
 }
 const AD_TYPE_COLORS: Record<string, string> = {
-  'SP': '#2D4A27',
-  'SB': '#6B8F61',
-  'SD': '#B8D4AE',
+  SP: '#275719',
+  SB: '#5A774C',
+  SD: '#AEA33C',
+}
+const AD_TYPE_LABELS: Record<string, string> = {
+  SP: 'Sponsored Products',
+  SB: 'Sponsored Brands',
+  SD: 'Sponsored Display',
 }
 const SALES_VIEW_STORAGE_KEY = 'biohuez:sales-view'
+const ARTWORK_CHANGE_DATE = '2026-04-15'
 
 interface SalesRow {
   date: string
@@ -255,7 +261,22 @@ function skuLabel(sku: string) {
   return sku
 }
 
-function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], granularity = 'daily') {
+function normalizeAdType(value: string) {
+  const text = String(value || '').toLowerCase()
+  if (text.includes('display') || text === 'sd') return 'SD'
+  if (text.includes('brand') || text === 'sb') return 'SB'
+  return 'SP'
+}
+
+function inferAdSku(row: AdsRow, skuNames: string[]) {
+  const source = row as AdsRow & Record<string, unknown>
+  const directSku = String(source.sku || source.sku_name || source.advertised_sku || source.advertisedSku || '').trim()
+  if (directSku) return directSku
+  const campaign = String(row.campaign_name || '').toLowerCase()
+  return skuNames.find(sku => campaign.includes(sku.toLowerCase())) || 'Unknown'
+}
+
+function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], adsByType: AdsByTypeRow[] = [], granularity = 'daily') {
   const dateSkuMap: Record<string, Record<string, number>> = {}
   const skuSet = new Set<string>()
   for (const row of sales) {
@@ -273,6 +294,16 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], gra
     const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
     if (!d) continue
     adSpendByDate[d] = (adSpendByDate[d] || 0) + (row.spend || 0)
+  }
+
+  const adSpendTypeByDate: Record<string, Record<string, number>> = {}
+  for (const row of adsByType) {
+    const rawDate = row.date?.slice(0, 10) || ''
+    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    if (!d) continue
+    const type = normalizeAdType(row.ad_type)
+    if (!adSpendTypeByDate[d]) adSpendTypeByDate[d] = {}
+    adSpendTypeByDate[d][type] = (adSpendTypeByDate[d][type] || 0) + (row.spend || 0)
   }
 
   const aspByDate: Record<string, { revenue: number; units: number }> = {}
@@ -303,6 +334,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], gra
       return {
         date,
         ...skuRevs,
+        ...Object.fromEntries(Object.entries(adSpendTypeByDate[date] || {}).map(([type, spend]) => [`adSpend_${type}`, spend])),
         adSpend: adSpendByDate[date] || 0,
         total: Object.values(skuRevs).reduce((s, v) => s + v, 0),
         units,
@@ -314,12 +346,111 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], gra
   return { chartData, skus: Array.from(skuSet).sort() }
 }
 
+function buildSkuTimeSeries(sales: SalesRow[], granularity = 'daily') {
+  const bucketMap: Record<string, Record<string, { revenue: number; units: number }>> = {}
+  const skuSet = new Set<string>()
+  for (const row of sales) {
+    const rawDate = row.date?.slice(0, 10) || ''
+    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const sku = row.sku || 'Unknown'
+    if (!date) continue
+    if (!bucketMap[date]) bucketMap[date] = {}
+    if (!bucketMap[date][sku]) bucketMap[date][sku] = { revenue: 0, units: 0 }
+    bucketMap[date][sku].revenue += row.revenue || 0
+    bucketMap[date][sku].units += row.units || 0
+    skuSet.add(sku)
+  }
+
+  const skus = Array.from(skuSet).sort()
+  const dates = Object.keys(bucketMap).sort()
+  return {
+    skus,
+    sales: dates.map(date => ({
+      date,
+      ...Object.fromEntries(skus.map(sku => [sku, bucketMap[date][sku]?.revenue || 0])),
+    })),
+    units: dates.map(date => ({
+      date,
+      ...Object.fromEntries(skus.map(sku => [sku, bucketMap[date][sku]?.units || 0])),
+    })),
+    asp: dates.map(date => ({
+      date,
+      ...Object.fromEntries(skus.map(sku => {
+        const bucket = bucketMap[date][sku]
+        return [sku, bucket && bucket.units > 0 ? bucket.revenue / bucket.units : null]
+      })),
+    })),
+  }
+}
+
+function buildTrafficSeries(sales: SalesRow[], ads: AdsRow[], granularity = 'daily') {
+  const buckets: Record<string, { sessions: number; units: number; revenue: number; adSpend: number; clicks: number }> = {}
+  for (const row of sales) {
+    const rawDate = row.date?.slice(0, 10) || ''
+    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    if (!date) continue
+    if (!buckets[date]) buckets[date] = { sessions: 0, units: 0, revenue: 0, adSpend: 0, clicks: 0 }
+    buckets[date].sessions += row.sessions || 0
+    buckets[date].units += row.units || 0
+    buckets[date].revenue += row.revenue || 0
+  }
+  for (const row of ads) {
+    const rawDate = row.date?.slice(0, 10) || ''
+    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    if (!date) continue
+    if (!buckets[date]) buckets[date] = { sessions: 0, units: 0, revenue: 0, adSpend: 0, clicks: 0 }
+    buckets[date].adSpend += row.spend || 0
+    buckets[date].clicks += row.clicks || 0
+  }
+  return Object.entries(buckets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({
+      date,
+      ...value,
+      cvr: value.sessions > 0 ? value.units / value.sessions * 100 : null,
+      sessionsPerAdDollar: value.adSpend > 0 ? value.sessions / value.adSpend : null,
+      sessionsPerClick: value.clicks > 0 ? value.sessions / value.clicks : null,
+    }))
+}
+
+function average(values: number[]) {
+  const valid = values.filter(value => Number.isFinite(value))
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null
+}
+
+function downloadTable(filename: string, rows: Array<Record<string, string | number>>) {
+  const headers = Object.keys(rows[0] || {})
+  if (headers.length === 0) return
+  const escapeCell = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const html = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead><tr>${headers.map(header => `<th>${escapeCell(header)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${rows.map(row => `<tr>${headers.map(header => `<td>${escapeCell(row[header])}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function SalesPage() {
   const [data, setData] = useState<SalesData | null>(null)
   const [demographics, setDemographics] = useState<DemographicsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [visibleKpis, setVisibleKpis] = useState<string[]>(['revenue', 'orders', 'units', 'aov', 'acos', 'roas', 'proas'])
   const [visibleSeries, setVisibleSeries] = useState<string[]>(['revenue', 'asp', 'adSpend', 'bestBsr'])
+  const [chartStyle, setChartStyle] = useState<'line' | 'area'>('line')
   const [viewSaved, setViewSaved] = useState(false)
   const [editingView, setEditingView] = useState(false)
   const filters = useDashboardFilters()
@@ -347,6 +478,7 @@ export default function SalesPage() {
       const parsed = JSON.parse(saved)
       if (Array.isArray(parsed.visibleKpis)) setVisibleKpis(parsed.visibleKpis)
       if (Array.isArray(parsed.visibleSeries)) setVisibleSeries(parsed.visibleSeries.map((key: string) => key === 'units' ? 'asp' : key))
+      if (parsed.chartStyle === 'line' || parsed.chartStyle === 'area') setChartStyle(parsed.chartStyle)
     } catch {}
   }, [])
 
@@ -392,15 +524,43 @@ export default function SalesPage() {
     skuMap[k].orders += row.orders || 0
     skuMap[k].units += row.units || 0
   }
+  const adSkuMap: Record<string, { adSales: number; adUnits: number }> = {}
+  const knownSkus = Object.keys(skuMap)
+  for (const row of ads) {
+    const k = inferAdSku(row, knownSkus)
+    if (!adSkuMap[k]) adSkuMap[k] = { adSales: 0, adUnits: 0 }
+    adSkuMap[k].adSales += row.sales_1d || 0
+    adSkuMap[k].adUnits += row.purchases_1d || 0
+  }
   const skuPerf = Object.entries(skuMap).map(([sku, v]) => ({
     sku,
     ...v,
-    revPerUnit: v.units > 0 ? v.revenue / v.units : 0,
+    asp: v.units > 0 ? v.revenue / v.units : 0,
+    aov: v.orders > 0 ? v.revenue / v.orders : 0,
+    adSales: adSkuMap[sku]?.adSales || 0,
+    adUnits: adSkuMap[sku]?.adUnits || 0,
+    adSalesPct: v.revenue > 0 ? ((adSkuMap[sku]?.adSales || 0) / v.revenue) * 100 : 0,
+    adUnitsPct: v.units > 0 ? ((adSkuMap[sku]?.adUnits || 0) / v.units) * 100 : 0,
   })).sort((a, b) => b.revenue - a.revenue)
 
-  const overview = buildOverviewChart(sales, ads, bsr, filters.granularity)
+  const overview = buildOverviewChart(sales, ads, bsr, ads_by_type, filters.granularity)
   const overviewChartData = overview.chartData
   const skus = overview.skus
+  const skuTimeSeries = buildSkuTimeSeries(sales, filters.granularity)
+  const trafficSeries = buildTrafficSeries(sales, ads, filters.granularity)
+  const totalSessions = trafficSeries.reduce((sum, row) => sum + row.sessions, 0)
+  const totalClicks = trafficSeries.reduce((sum, row) => sum + row.clicks, 0)
+  const trafficAdSpend = trafficSeries.reduce((sum, row) => sum + row.adSpend, 0)
+  const trafficUnits = trafficSeries.reduce((sum, row) => sum + row.units, 0)
+  const trafficCvr = totalSessions > 0 ? trafficUnits / totalSessions * 100 : null
+  const sessionsPerAdDollar = trafficAdSpend > 0 ? totalSessions / trafficAdSpend : null
+  const sessionsPerClick = totalClicks > 0 ? totalSessions / totalClicks : null
+  const preArtworkRows = trafficSeries.filter(row => row.date < ARTWORK_CHANGE_DATE)
+  const postArtworkRows = trafficSeries.filter(row => row.date >= ARTWORK_CHANGE_DATE)
+  const preArtworkSessions = average(preArtworkRows.map(row => row.sessions))
+  const postArtworkSessions = average(postArtworkRows.map(row => row.sessions))
+  const preArtworkSessionClick = average(preArtworkRows.map(row => row.sessionsPerClick || 0))
+  const postArtworkSessionClick = average(postArtworkRows.map(row => row.sessionsPerClick || 0))
   const currentDateValues = sales.map(row => row.date?.slice(0, 10)).filter(Boolean).sort() as string[]
   const latestDate = currentDateValues[currentDateValues.length - 1] || allSales.map(row => row.date?.slice(0, 10)).filter(Boolean).sort().pop()
   const currentEndDate = parseDate(filters.to || latestDate)
@@ -420,7 +580,8 @@ export default function SalesPage() {
   const previousSales = filterByDashboardState(allSales, previousFilters, row => row.date, row => row.sku)
   const previousAds = filterByDashboardState(allAds, previousFilters, row => row.date)
   const previousBsr = filterByDashboardState(allBsr, previousFilters, row => row.date, row => row.sku_name)
-  const previousOverview = buildOverviewChart(previousSales, previousAds, previousBsr, filters.granularity)
+  const previousAdsByType = filterByDashboardState(allAdsByType, previousFilters, row => row.date)
+  const previousOverview = buildOverviewChart(previousSales, previousAds, previousBsr, previousAdsByType, filters.granularity)
   const chartSkus = Array.from(new Set([...skus, ...previousOverview.skus])).sort()
   const bsrAsinSet = new Set<string>()
   const bsrDateMap: Record<string, Record<string, number>> = {}
@@ -538,28 +699,56 @@ export default function SalesPage() {
     setVisibleSeries(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
   }
 
+  function updateChartStyle(value: 'line' | 'area') {
+    setViewSaved(false)
+    setChartStyle(value)
+  }
+
   function saveSalesView() {
-    window.localStorage.setItem(SALES_VIEW_STORAGE_KEY, JSON.stringify({ visibleKpis, visibleSeries }))
+    window.localStorage.setItem(SALES_VIEW_STORAGE_KEY, JSON.stringify({ visibleKpis, visibleSeries, chartStyle }))
     setViewSaved(true)
+  }
+
+  function exportSkuPerformance() {
+    downloadTable(`biohuez-sales-sku-performance-${filters.interval}.xls`, skuPerf.map(row => ({
+      SKU: skuLabel(row.sku),
+      Sales: Number(row.revenue.toFixed(2)),
+      Orders: row.orders,
+      Units: row.units,
+      ASP: Number(row.asp.toFixed(2)),
+      AOV: Number(row.aov.toFixed(2)),
+      'Ad Sales': Number(row.adSales.toFixed(2)),
+      '% of Ad Sales': Number(row.adSalesPct.toFixed(2)),
+      'Ad Units': row.adUnits,
+      '% of Ad Units': Number(row.adUnitsPct.toFixed(2)),
+    })))
   }
 
   function renderKpiGrid(items: typeof overviewKpis, title?: string, editable = false) {
     const selectedItems = items.filter(item => visibleKpis.includes(item.key))
+    const displayItems = editable && editingView ? items : selectedItems
     return (
       <div className="sales-kpi-panel">
         {title && <div className="sales-kpi-panel-title">{title}</div>}
         <div className="sales-overview-kpi-grid">
-          {selectedItems.map(item => (
-            <div key={item.key} className={`sales-widget-card ${editable && editingView ? 'is-editing' : ''}`}>
-              {editable && editingView && <button className="sales-widget-remove" onClick={() => toggleKpi(item.key)}>×</button>}
-              <MetricCard
-                label={item.label}
-                value={item.value}
-                sublabel={item.sublabel}
-                status={item.status}
-              />
-            </div>
-          ))}
+          {displayItems.map(item => {
+            const active = visibleKpis.includes(item.key)
+            return (
+              <div key={item.key} className={`sales-widget-card ${editable && editingView ? 'is-editing' : ''} ${editable && editingView && !active ? 'is-hidden-widget' : ''}`}>
+                {editable && editingView && (
+                  <button className={`sales-widget-remove ${active ? '' : 'is-restore'}`} onClick={() => toggleKpi(item.key)}>
+                    {active ? '×' : '+'}
+                  </button>
+                )}
+                <MetricCard
+                  label={item.label}
+                  value={item.value}
+                  sublabel={item.sublabel}
+                  status={active ? item.status : undefined}
+                />
+              </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -580,7 +769,22 @@ export default function SalesPage() {
     repeat_pct: r.repeat_rate || 0,
   }))
 
+  function chartSubtitle(chartData: Array<Record<string, unknown>>) {
+    const points = chartData.filter(row => Number(row.total || 0) > 0)
+    if (points.length < 2) return 'Sales, ASP, ad spend, and BSR trend by selected period.'
+    const first = points[0]
+    const last = points[points.length - 1]
+    const firstAsp = Number(first.asp || 0)
+    const lastAsp = Number(last.asp || 0)
+    const firstRevenue = Number(first.total || 0)
+    const lastRevenue = Number(last.total || 0)
+    const aspTrend = firstAsp && lastAsp >= firstAsp ? 'ASP improved' : 'ASP softened'
+    const salesTrend = firstRevenue && lastRevenue >= firstRevenue ? 'sales increased' : 'sales declined'
+    return `${aspTrend} from ${fmtMoney2(firstAsp)} to ${fmtMoney2(lastAsp)} while ${salesTrend} from ${fmtMoney(firstRevenue)} to ${fmtMoney(lastRevenue)}.`
+  }
+
   function renderOverviewChart(chartData: Array<Record<string, unknown>>, title?: string) {
+    const adSpendTypes = ['SP', 'SB', 'SD'].filter(type => chartData.some(row => Number(row[`adSpend_${type}`] || 0) > 0))
     const cursor = { stroke: '#111111', strokeDasharray: '4 4', strokeWidth: 1 }
     const tooltipStyle = {
       border: '1px solid rgba(34, 44, 38, 0.12)',
@@ -604,13 +808,17 @@ export default function SalesPage() {
             <div className="sales-band sales-band-large">
               <div className="sales-band-label">Sales</div>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} syncId="sales-overview" margin={{ top: 10, right: 18, left: 18, bottom: 0 }}>
+                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 10, right: 18, left: 18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
                   <XAxis dataKey="date" hide />
                   <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
                   <Tooltip cursor={cursor} contentStyle={tooltipStyle} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Sales']} />
-                  <Line type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} dot={false} connectNulls name="Sales" />
-                </LineChart>
+                  {chartStyle === 'area' ? (
+                    <Area type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} fill="var(--biohuez-dark)" fillOpacity={0.11} dot={false} connectNulls name="Sales" />
+                  ) : (
+                    <Line type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} dot={false} connectNulls name="Sales" />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -618,13 +826,17 @@ export default function SalesPage() {
             <div className="sales-band">
               <div className="sales-band-label">ASP</div>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 0 }}>
+                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
                   <XAxis dataKey="date" hide />
                   <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
                   <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney2(Number(value)), 'ASP']} />
-                  <Line type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={1.9} dot={false} connectNulls name="ASP" />
-                </LineChart>
+                  {chartStyle === 'area' ? (
+                    <Area type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} fill="var(--biohuez-sage)" fillOpacity={0.09} dot={false} connectNulls name="ASP" />
+                  ) : (
+                    <Line type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} dot={false} connectNulls name="ASP" />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -637,26 +849,86 @@ export default function SalesPage() {
                   <XAxis dataKey="date" hide />
                   <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
                   <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Ad Spend']} />
-                  <Bar dataKey="adSpend" fill="var(--biohuez-gold)" opacity={0.48} radius={[2, 2, 0, 0]} name="Ad Spend" />
+                  {adSpendTypes.length > 0 ? adSpendTypes.map(type => (
+                    <Bar key={type} dataKey={`adSpend_${type}`} stackId="adSpend" fill={AD_TYPE_COLORS[type]} opacity={0.58} radius={[2, 2, 0, 0]} name={AD_TYPE_LABELS[type]} />
+                  )) : (
+                    <Bar dataKey="adSpend" fill="var(--biohuez-gold)" opacity={0.5} radius={[2, 2, 0, 0]} name="Ad Spend" />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
+              {adSpendTypes.length > 0 && (
+                <div className="sales-ad-type-legend">
+                  {adSpendTypes.map(type => (
+                    <span key={type}><i style={{ background: AD_TYPE_COLORS[type] }} />{type}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {visibleSeries.includes('bestBsr') && (
             <div className="sales-band">
               <div className="sales-band-label">BSR</div>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 18 }}>
+                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 18 }}>
                   <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#7B837C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
                   <YAxis orientation="right" reversed width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => Number(v).toLocaleString()} domain={['dataMin', 'dataMax']} axisLine={false} tickLine={false} />
                   <Tooltip cursor={cursor} position={{ y: 8 }} contentStyle={compactTooltip} formatter={(value: unknown) => ['#' + Number(value).toLocaleString(), 'Best BSR']} />
-                  <Area type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.8} fill="var(--biohuez-gold)" fillOpacity={0.14} dot={false} connectNulls name="Best BSR" />
-                </AreaChart>
+                  {chartStyle === 'area' ? (
+                    <Area type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} fill="var(--biohuez-gold)" fillOpacity={0.12} dot={false} connectNulls name="Best BSR" />
+                  ) : (
+                    <Line type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} dot={false} connectNulls name="Best BSR" />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
         </div>
+      </div>
+    )
+  }
+
+  function renderSkuTimeSeriesChart(
+    title: string,
+    subtitle: string,
+    chartData: Array<Record<string, unknown>>,
+    formatter: (value: number) => string,
+  ) {
+    return (
+      <div className="dashboard-chart-card sales-time-series-card">
+        <SectionHeader title={title} subtitle={subtitle} />
+        <ResponsiveContainer width="100%" height={290}>
+          <LineChart data={chartData} syncId="sales-sku-time-series" margin={{ top: 8, right: 22, left: 4, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="2 5" stroke="#D8DDD7" vertical />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={value => formatter(Number(value))} axisLine={false} tickLine={false} />
+            <Tooltip
+              cursor={{ stroke: '#111111', strokeDasharray: '4 4', strokeWidth: 1 }}
+              contentStyle={{
+                border: '1px solid rgba(34, 44, 38, 0.12)',
+                borderRadius: 8,
+                padding: '7px 9px',
+                boxShadow: '0 10px 24px rgba(20, 28, 22, 0.12)',
+                fontSize: '0.78rem',
+              }}
+              formatter={(value: unknown, name: unknown) => [formatter(Number(value)), skuLabel(String(name))]}
+              labelFormatter={value => formatChartDate(value)}
+            />
+            <Legend formatter={value => skuLabel(String(value))} />
+            {skuTimeSeries.skus.map(sku => (
+              <Line
+                key={sku}
+                type="monotone"
+                dataKey={sku}
+                stroke={SKU_COLORS[sku] || '#AEA33C'}
+                strokeWidth={2.2}
+                dot={false}
+                connectNulls
+                name={skuLabel(sku)}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
       </div>
     )
   }
@@ -667,6 +939,7 @@ export default function SalesPage() {
         <div className="dashboard-tabs-scroll">
           <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="time-series">Time Series</TabsTrigger>
             <TabsTrigger value="intelligence">Sales Mix</TabsTrigger>
             <TabsTrigger value="traffic">Traffic</TabsTrigger>
             <TabsTrigger value="bsr">BSR</TabsTrigger>
@@ -688,19 +961,6 @@ export default function SalesPage() {
                 </div>
               </div>
 
-              {editingView && (
-                <div className="sales-kpi-options edit-mode">
-                  {overviewKpis.map(item => {
-                    const active = visibleKpis.includes(item.key)
-                    return (
-                      <button key={item.key} className={`sales-widget-toggle ${active ? 'active' : ''}`} onClick={() => toggleKpi(item.key)}>
-                        {active ? '×' : '+'} {item.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
               {comparisonActive ? (
                 <div className="sales-compare-grid sales-compare-kpis">
                   {renderKpiGrid(overviewKpis, 'Current period', true)}
@@ -714,23 +974,32 @@ export default function SalesPage() {
             <section>
             <div>
               <div className="sales-chart-toolbar">
-                <SectionHeader title={intervalTitle(filters.interval)} subtitle="Choose the chart layers and compare period view." />
-                <div className="sales-chart-picker">
-                  {[
-                    { key: 'revenue', label: 'Sales' },
-                    { key: 'asp', label: 'ASP' },
-                    { key: 'adSpend', label: 'Ad Spend' },
-                    { key: 'bestBsr', label: 'BSR' },
-                  ].map(item => (
-                    <label key={item.key} className="sales-kpi-option">
-                      <input
-                        type="checkbox"
-                        checked={visibleSeries.includes(item.key)}
-                        onChange={() => toggleSeries(item.key)}
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
+                <SectionHeader title={intervalTitle(filters.interval)} subtitle={chartSubtitle(overviewChartData)} />
+                <div className="sales-chart-controls">
+                  <div className="sales-chart-style-toggle">
+                    {(['line', 'area'] as const).map(value => (
+                      <button key={value} className={chartStyle === value ? 'active' : ''} onClick={() => updateChartStyle(value)}>
+                        {value === 'line' ? 'Line' : 'Area'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="sales-chart-picker">
+                    {[
+                      { key: 'revenue', label: 'Sales' },
+                      { key: 'asp', label: 'ASP' },
+                      { key: 'adSpend', label: 'Ad Spend' },
+                      { key: 'bestBsr', label: 'BSR' },
+                    ].map(item => (
+                      <label key={item.key} className="sales-kpi-option">
+                        <input
+                          type="checkbox"
+                          checked={visibleSeries.includes(item.key)}
+                          onChange={() => toggleSeries(item.key)}
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="dashboard-chart-card sales-overview-chart">
@@ -743,31 +1012,68 @@ export default function SalesPage() {
             </section>
           </div>
 
-          <SectionHeader title="SKU Performance" />
+          <div className="sales-table-heading">
+            <SectionHeader title="SKU Performance" subtitle="Sales, ASP, AOV, ad-attributed sales, and ad-attributed unit mix." />
+            <button className="sales-export-button" onClick={exportSkuPerformance}>Download Excel</button>
+          </div>
           <div className="dashboard-table-card">
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <table className="sales-export-table">
               <thead>
-                <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
-                  {['SKU', 'Revenue', 'Orders', 'Units', 'Rev/Unit'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: h === 'SKU' ? 'left' : 'right', color: '#666', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase' }}>{h}</th>
+                <tr>
+                  {['SKU', 'Sales', 'Orders', 'Units', 'ASP', 'AOV', 'Ad Sales', '% of Ad Sales', 'Ad Units', '% of Ad Units'].map(h => (
+                    <th key={h} className={h === 'SKU' ? 'left' : ''}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {skuPerf.map(row => (
-                  <tr key={row.sku} style={{ borderBottom: '1px solid #F5F5F5' }}>
-                    <td style={{ padding: '8px 12px' }}>
+                  <tr key={row.sku}>
+                    <td className="left">
                       <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: SKU_COLORS[row.sku] || '#ccc', marginRight: 8 }} />
                       {skuLabel(row.sku)}
                     </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney(row.revenue)}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(row.orders)}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmt(row.units)}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtMoney2(row.revPerUnit)}</td>
+                    <td>{fmtMoney(row.revenue)}</td>
+                    <td>{fmt(row.orders)}</td>
+                    <td>{fmt(row.units)}</td>
+                    <td>{fmtMoney2(row.asp)}</td>
+                    <td>{fmtMoney2(row.aov)}</td>
+                    <td>{fmtMoney(row.adSales)}</td>
+                    <td>{fmtPct(row.adSalesPct)}</td>
+                    <td>{fmt(row.adUnits)}</td>
+                    <td>{fmtPct(row.adUnitsPct)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="time-series">
+          <div className="sales-time-series-page">
+            <div className="sales-time-series-intro">
+              <SectionHeader
+                title="SKU Time Series"
+                subtitle={`${filters.granularity === 'weekly' ? 'Weekly' : 'Daily'} view for Sales, Units, and ASP. Use the top filter bar to switch period, SKU, and aggregation.`}
+              />
+            </div>
+            {renderSkuTimeSeriesChart(
+              'Sales by SKU',
+              'Revenue trend by SKU over the selected period.',
+              skuTimeSeries.sales,
+              value => fmtMoney(value),
+            )}
+            {renderSkuTimeSeriesChart(
+              'Units by SKU',
+              'Unit volume trend by SKU over the selected period.',
+              skuTimeSeries.units,
+              value => fmt(value),
+            )}
+            {renderSkuTimeSeriesChart(
+              'ASP by SKU',
+              'Average selling price trend by SKU over the selected period.',
+              skuTimeSeries.asp,
+              value => fmtMoney2(value),
+            )}
           </div>
         </TabsContent>
 
@@ -915,48 +1221,85 @@ export default function SalesPage() {
           </div>
         </TabsContent>
         <TabsContent value="traffic">
-          <SectionHeader title="Revenue by SKU Over Time" />
-          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={overviewChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + v} />
-                <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
-                <Legend formatter={value => skuLabel(String(value))} />
-                {skus.map(sku => (
-                  <Area key={sku} type="monotone" dataKey={sku} stackId="a"
-                    fill={SKU_COLORS[sku] || '#ccc'} stroke={SKU_COLORS[sku] || '#ccc'} fillOpacity={0.8} name={skuLabel(sku)} />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <SectionHeader title="Daily Orders by SKU" />
-          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-            {(() => {
-              const orderData = Object.entries(
-                sales.reduce<Record<string, Record<string, number>>>((acc, row) => {
-                  const d = row.date?.slice(0, 10) || ''
-                  if (!acc[d]) acc[d] = {}
-                  acc[d][row.sku] = (acc[d][row.sku] || 0) + (row.orders || 0)
-                  return acc
-                }, {})
-              ).sort(([a], [b]) => a.localeCompare(b)).map(([date, skuOrders]) => ({ date, ...skuOrders }))
-              return (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={orderData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend formatter={value => skuLabel(String(value))} />
-                    {skus.map(sku => (
-                      <Bar key={sku} dataKey={sku} stackId="o" fill={SKU_COLORS[sku] || '#ccc'} name={skuLabel(sku)} />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              )
-            })()}
+          <div className="sales-traffic-page">
+            <div className="sales-traffic-intro">
+              <SectionHeader
+                title="Traffic / Session Analysis"
+                subtitle="Sessions, clicks, ad spend, conversion, and artwork-change impact using the selected dashboard period."
+              />
+            </div>
+
+            <div className="dashboard-kpi-grid">
+              <MetricCard label="Sessions" value={fmt(totalSessions)} sublabel={filters.granularity === 'weekly' ? 'Weekly aggregation' : 'Daily aggregation'} />
+              <MetricCard label="Clicks" value={fmt(totalClicks)} sublabel="Amazon Ads clicks" />
+              <MetricCard label="CVR" value={fmtPct(trafficCvr)} sublabel="Units / sessions" />
+              <MetricCard label="Sessions / Ad $" value={sessionsPerAdDollar == null ? '—' : sessionsPerAdDollar.toFixed(2)} sublabel="Traffic efficiency" />
+              <MetricCard label="Sessions / Click" value={sessionsPerClick == null ? '—' : sessionsPerClick.toFixed(2)} sublabel="Click-to-session leverage" />
+              <MetricCard
+                label="Post Artwork Sessions"
+                value={postArtworkSessions == null ? '—' : fmt(postArtworkSessions)}
+                sublabel={preArtworkSessions == null || postArtworkSessions == null ? 'Needs date coverage' : `${fmtSignedPct(((postArtworkSessions - preArtworkSessions) / preArtworkSessions) * 100)} vs pre-change`}
+                status={preArtworkSessions != null && postArtworkSessions != null && postArtworkSessions < preArtworkSessions ? 'warn' : 'normal'}
+              />
+            </div>
+
+            <div className="dashboard-chart-card sales-traffic-chart">
+              <SectionHeader title="Sessions vs Ad Spend" subtitle="Shows whether paid spend is translating into more sessions over time." />
+              <ResponsiveContainer width="100%" height={340}>
+                <ComposedChart data={trafficSeries} margin={{ top: 12, right: 24, left: 4, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="2 5" stroke="#D8DDD7" vertical />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="sessions" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={value => Number(value).toLocaleString()} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="money" orientation="right" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={value => fmtMoney(Number(value))} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    cursor={{ stroke: '#111111', strokeDasharray: '4 4', strokeWidth: 1 }}
+                    contentStyle={{ border: '1px solid rgba(34, 44, 38, 0.12)', borderRadius: 8, padding: '7px 9px', boxShadow: '0 10px 24px rgba(20, 28, 22, 0.12)', fontSize: '0.78rem' }}
+                    formatter={(value: unknown, name: unknown) => {
+                      const label = String(name)
+                      if (label.includes('Spend')) return [fmtMoney(Number(value)), label]
+                      if (label.includes('CVR')) return [fmtPct(Number(value)), label]
+                      return [fmt(Number(value)), label]
+                    }}
+                    labelFormatter={value => formatChartDate(value)}
+                  />
+                  <Legend />
+                  <Bar yAxisId="money" dataKey="adSpend" fill="var(--biohuez-gold)" opacity={0.42} radius={[2, 2, 0, 0]} name="Ad Spend" />
+                  <Line yAxisId="sessions" type="monotone" dataKey="sessions" stroke="var(--biohuez-dark)" strokeWidth={2.6} dot={false} name="Sessions" connectNulls />
+                  <Line yAxisId="sessions" type="monotone" dataKey="clicks" stroke="var(--biohuez-sage)" strokeWidth={2} dot={false} name="Clicks" connectNulls />
+                  <ReferenceLine x={ARTWORK_CHANGE_DATE} stroke="#AEA33C" strokeDasharray="4 4" label={{ value: 'Artwork change', position: 'insideTopRight', fill: '#5A774C', fontSize: 11 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="dashboard-chart-card sales-traffic-chart">
+              <SectionHeader title="Session Quality" subtitle="Conversion rate and sessions per click before and after the artwork update." />
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={trafficSeries} margin={{ top: 12, right: 24, left: 4, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="2 5" stroke="#D8DDD7" vertical />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="rate" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={value => `${Number(value).toFixed(0)}%`} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="ratio" orientation="right" tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={value => Number(value).toFixed(1)} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    cursor={{ stroke: '#111111', strokeDasharray: '4 4', strokeWidth: 1 }}
+                    contentStyle={{ border: '1px solid rgba(34, 44, 38, 0.12)', borderRadius: 8, padding: '7px 9px', boxShadow: '0 10px 24px rgba(20, 28, 22, 0.12)', fontSize: '0.78rem' }}
+                    formatter={(value: unknown, name: unknown) => {
+                      const label = String(name)
+                      return label.includes('CVR') ? [fmtPct(Number(value)), label] : [Number(value).toFixed(2), label]
+                    }}
+                    labelFormatter={value => formatChartDate(value)}
+                  />
+                  <Legend />
+                  <Line yAxisId="rate" type="monotone" dataKey="cvr" stroke="var(--biohuez-dark)" strokeWidth={2.4} dot={false} name="CVR %" connectNulls />
+                  <Line yAxisId="ratio" type="monotone" dataKey="sessionsPerClick" stroke="var(--biohuez-gold)" strokeWidth={2.2} dot={false} name="Sessions / Click" connectNulls />
+                  <ReferenceLine x={ARTWORK_CHANGE_DATE} stroke="#AEA33C" strokeDasharray="4 4" label={{ value: 'Artwork change', position: 'insideTopRight', fill: '#5A774C', fontSize: 11 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="sales-traffic-note">
+              <strong>Add-to-cart availability</strong>
+              <span>Brand-level add-to-cart data is not present in the current Sales endpoint, so this view uses sessions, clicks, units, and conversion rate as the traffic quality proxy.</span>
+            </div>
           </div>
         </TabsContent>
         <TabsContent value="bsr">
