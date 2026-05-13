@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Activity,
   BarChart3,
@@ -15,9 +15,11 @@ import {
   Home,
   MapPin,
   Menu,
+  Presentation,
   RefreshCw,
   RotateCcw,
   Search,
+  Sparkles,
   Swords,
   Target,
   TrendingUp,
@@ -26,6 +28,11 @@ import {
   X,
 } from "lucide-react";
 import { DashboardFilters } from "@/components/dashboard-filters";
+import {
+  ReportSlideSidebar,
+  ReportSlideSorter,
+  useReportSlideDeck,
+} from "@/components/report-slide-deck";
 
 const navItems = [
   { icon: Home, label: "Summary", href: "/", priority: 1, preview: "/page-previews/summary.png" },
@@ -59,74 +66,6 @@ const pageSubtitles: Record<string, string> = {
   "System Status": "MotherDuck, Amazon SP-API, Ads API, sync freshness, and endpoint health",
 };
 
-const pageNarratives: Record<string, { message: string; watch: string; action: string }> = {
-  Summary: {
-    message: "Executive view should quickly show whether the brand is healthy enough for daily operating decisions.",
-    watch: "Revenue momentum, margin pressure, inventory risk, and API/data freshness.",
-    action: "Use this slide as the opening readout before drilling into page-level drivers.",
-  },
-  Sales: {
-    message: "Sales performance is the primary story: revenue, ASP, ad spend, and BSR should explain what changed.",
-    watch: "KPI widgets, SKU time series, traffic quality, and ad spend mix.",
-    action: "Review Sales first when the business question is growth, conversion, or SKU performance.",
-  },
-  Finance: {
-    message: "Finance should explain whether reported sales are converting into contribution after fees and refunds.",
-    watch: "Settlement gaps, fee drag, refunds, margin trend, and calendar versus payout timing.",
-    action: "Use this slide to identify where revenue is leaking into Amazon costs or refund pressure.",
-  },
-  Inventory: {
-    message: "Inventory should surface operating risk before it becomes a sales constraint.",
-    watch: "Coverage, low-stock SKUs, aging units, inbound timing, and fulfillment-center imbalance.",
-    action: "Use this slide to prioritize restock and inventory cleanup decisions.",
-  },
-  Returns: {
-    message: "Returns should show which products or reasons are creating refund drag.",
-    watch: "Return rate spikes, reason mix, refund value, and SKU-level concentration.",
-    action: "Use this slide to connect quality, listing, or customer-fit issues to financial impact.",
-  },
-  Campaign: {
-    message: "Campaigns should show whether paid spend is creating profitable demand.",
-    watch: "ACOS, ROAS, pROAS, clicks, conversion, campaign type, and search-term efficiency.",
-    action: "Use this slide to decide whether to scale, pause, or restructure spend.",
-  },
-  Demographics: {
-    message: "Demographics should explain who is buying and whether repeat behavior is improving.",
-    watch: "Customer mix, repeat purchase behavior, cohorts, segments, and revenue contribution.",
-    action: "Use this slide to guide positioning, retention, and brand onboarding narratives.",
-  },
-  Geography: {
-    message: "Geography should show where demand is concentrated and whether regional mix is shifting.",
-    watch: "State/city concentration, SKU mix by region, shipment geography, and growth pockets.",
-    action: "Use this slide for regional demand planning and market expansion conversations.",
-  },
-  Seasonality: {
-    message: "Seasonality should make demand timing predictable enough for inventory and campaign planning.",
-    watch: "Weekly patterns, seasonal peaks, recurring dips, and category timing.",
-    action: "Use this slide to plan stock, ad pacing, and seasonal promotions.",
-  },
-  Cohorts: {
-    message: "Cohorts should show whether customers are coming back and compounding value over time.",
-    watch: "Retention curves, repeat behavior, cohort revenue, and LTV movement.",
-    action: "Use this slide when the question is customer quality rather than one-time sales.",
-  },
-  Competitor: {
-    message: "Competitor analysis should show where BioHuez is positioned against the market.",
-    watch: "Price, visibility, BSR movement, competitive offers, and category signals.",
-    action: "Use this slide to support pricing, listing, and positioning decisions.",
-  },
-  "Impact Analysis": {
-    message: "Impact analysis should isolate what changed after a specific action.",
-    watch: "Before/after movement in traffic, conversion, sales, BSR, and ad efficiency.",
-    action: "Use this slide for experiments such as artwork changes, listing edits, or campaign shifts.",
-  },
-  "System Status": {
-    message: "System status should prove whether the dashboard data is trustworthy and current.",
-    watch: "MotherDuck access, SP-API freshness, Ads API status, script errors, and endpoint health.",
-    action: "Use this slide before demos or client reviews to confirm data readiness.",
-  },
-};
-
 const DEFAULT_THEME = {
   dark: "#275719",
   canvas: "#F4EEE5",
@@ -147,8 +86,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [previewNav, setPreviewNav] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [theme, setTheme] = useState(DEFAULT_THEME);
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const pathname = usePathname();
   const activeNav = getActiveNav(pathname);
   const activeIndex = Math.max(0, navItems.findIndex(item => item.label === activeNav));
@@ -156,9 +93,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const nextItem = navItems[(activeIndex + 1) % navItems.length];
   const previewItem = navItems.find(item => item.label === previewNav);
   const [reportMode, setReportMode] = useState(false);
-  const [reportView, setReportView] = useState<"slide" | "sorter">("slide");
-  const activeNarrative = pageNarratives[activeNav] || pageNarratives.Summary;
-  const comparisonActive = searchParams.get("compare") === "previous";
+  const slideDeck = useReportSlideDeck(reportMode, pathname);
 
   function handleRefresh() {
     setRefreshing(true);
@@ -171,14 +106,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     try {
       const parsed = JSON.parse(saved);
       setTheme({ ...DEFAULT_THEME, ...parsed });
-    } catch {}
+    } catch {
+      /* ignore corrupt theme */
+    }
   }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("biohuez-report-mode");
     if (saved === "true") setReportMode(true);
-    const savedReportView = window.localStorage.getItem("biohuez-report-view");
-    if (savedReportView === "sorter") setReportView("sorter");
   }, []);
 
   useEffect(() => {
@@ -200,78 +135,35 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     });
   }
 
-  function updateReportView(value: "slide" | "sorter") {
-    setReportView(value);
-    window.localStorage.setItem("biohuez-report-view", value);
-  }
-
   function toggleCompare() {
-    const next = new URLSearchParams(searchParams.toString());
-    if (comparisonActive) next.delete("compare");
-    else next.set("compare", "previous");
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`);
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('compare') === 'previous') {
+        url.searchParams.delete('compare');
+      } else {
+        url.searchParams.set('compare', 'previous');
+      }
+      window.history.replaceState({}, '', url.toString());
+      window.dispatchEvent(new Event('popstate'));
+    } catch (e) {
+      /* ignore in weird environments */
+    }
   }
 
   return (
     <div className={`commercial-shell ${reportMode ? "is-report-mode" : ""}`}>
-      <aside className={`commercial-sidebar ${sidebarOpen ? "is-open" : ""} ${!reportMode && collapsed ? "is-collapsed" : ""} ${reportMode ? "is-report-sidebar" : ""}`}>
+      <aside className={`commercial-sidebar ${reportMode ? "is-report-sidebar" : ""} ${sidebarOpen ? "is-open" : ""} ${collapsed && !reportMode ? "is-collapsed" : ""}`}>
         {reportMode ? (
-          <>
-            <div className="commercial-report-sidebar-brand">
-              <Link href="/" className="commercial-brand-link">
-                <Image
-                  src="/biohuez-logo.png"
-                  alt="BioHuez"
-                  width={142}
-                  height={46}
-                  className="commercial-brand-logo"
-                  priority
-                />
-              </Link>
-              <button className="commercial-report-exit" onClick={toggleReportMode}>Exit</button>
-            </div>
-
-            <div className="commercial-report-sidebar-title">
-              <span>Brand Report</span>
-              <strong>Slide {activeIndex + 1} of {navItems.length}</strong>
-            </div>
-
-            <div className="commercial-report-view-toggle">
-              <button className={reportView === "slide" ? "active" : ""} onClick={() => updateReportView("slide")}>Slide</button>
-              <button className={reportView === "sorter" ? "active" : ""} onClick={() => updateReportView("sorter")}>Sorter</button>
-            </div>
-
-            <nav className="commercial-report-slide-nav" aria-label="Report slides">
-              {navItems.map((item, index) => {
-                const isActive = item.label === activeNav;
-                return (
-                  <Link key={item.label} href={item.href} className={`commercial-report-slide-link ${isActive ? "active" : ""}`}>
-                    <span>{index + 1}</span>
-                    <img src={item.preview} alt="" />
-                    <div>
-                      <strong>{item.label}</strong>
-                      <small>{pageNarratives[item.label]?.message || pageSubtitles[item.label] || "Dashboard page"}</small>
-                    </div>
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="commercial-report-sidebar-footer">
-              <Link href={previousItem.href} className="commercial-report-step full">
-                <ChevronLeft size={15} />
-                <span>{previousItem.label}</span>
-              </Link>
-              <Link href={nextItem.href} className="commercial-report-step full">
-                <span>{nextItem.label}</span>
-                <ChevronRight size={15} />
-              </Link>
-            </div>
-          </>
+          <ReportSlideSidebar
+            controller={slideDeck}
+            pageTitle={activeNav}
+            pageSubtitle={pageSubtitles[activeNav] || ""}
+            onExit={toggleReportMode}
+          />
         ) : (
           <>
             <div className="commercial-brand">
-              <Link href="/" className="commercial-brand-link">
+              <Link href="/" className="commercial-brand-link" data-testid="brand-home">
                 <Image
                   src="/biohuez-logo.png"
                   alt="BioHuez"
@@ -286,7 +178,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            <nav className="commercial-nav">
+            <nav className="commercial-nav" aria-label="Primary">
               {navItems.map(item => {
                 const isActive = activeNav === item.label;
                 return (
@@ -298,13 +190,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     onMouseLeave={() => setPreviewNav(null)}
                     onFocus={() => setPreviewNav(item.label)}
                     onBlur={() => setPreviewNav(null)}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                   >
                     <item.icon size={17} />
-                    {!collapsed && (
-                      <>
-                        <span>{item.label}</span>
-                      </>
-                    )}
+                    {!collapsed && <span>{item.label}</span>}
                   </Link>
                 );
               })}
@@ -312,13 +201,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
             <div className="commercial-sidebar-footer">
               {!collapsed && (
-                <div className="commercial-health-card">
+                <div className="commercial-health-card" data-testid="health-card">
                   <div className="commercial-health-top">
                     <span>Data Freshness</span>
                     <span className="commercial-status-dot" />
                   </div>
                   <div className="commercial-health-date">Live data</div>
-                  <button className="commercial-refresh-card-button" onClick={handleRefresh}>
+                  <button className="commercial-refresh-card-button" onClick={handleRefresh} data-testid="refresh-page">
                     <RefreshCw size={13} className={refreshing ? "spin" : ""} />
                     Refresh page
                   </button>
@@ -326,7 +215,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               )}
               {!collapsed && (
                 <div className="commercial-theme-card">
-                  <button className="commercial-theme-toggle" onClick={() => setThemeOpen(!themeOpen)}>
+                  <button className="commercial-theme-toggle" onClick={() => setThemeOpen(!themeOpen)} data-testid="theme-toggle">
                     Customize colors
                   </button>
                   {themeOpen && (
@@ -341,7 +230,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   )}
                 </div>
               )}
-              <button className="commercial-collapse-button" onClick={() => setCollapsed(!collapsed)} aria-label="Collapse navigation">
+              <button className="commercial-collapse-button" onClick={() => setCollapsed(!collapsed)} aria-label="Collapse navigation" data-testid="sidebar-collapse">
                 {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
                 {!collapsed && <span>Collapse</span>}
               </button>
@@ -350,12 +239,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      <div className={`commercial-sidebar-preview ${previewItem ? "is-visible" : ""} ${collapsed ? "is-collapsed" : ""}`}>
+      <div className={`commercial-sidebar-preview ${previewItem && !reportMode ? "is-visible" : ""} ${collapsed ? "is-collapsed" : ""}`}>
         {previewItem && (
           <>
             <div className="commercial-sidebar-preview-top">
               <span>{previewItem.label}</span>
             </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={previewItem.preview} alt={`${previewItem.label} preview`} />
           </>
         )}
@@ -367,95 +257,68 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <button className="commercial-icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open navigation">
               <Menu size={19} />
             </button>
-            <div>
+            <div className="min-w-0 flex-1">
               <h1>{activeNav}</h1>
-              {activeNav !== "Sales" && <p>{pageSubtitles[activeNav] || ""}</p>}
+              <p>{pageSubtitles[activeNav] || ""}</p>
             </div>
             <div className="commercial-report-controls">
-              <button className={`commercial-report-toggle ${reportMode ? "active" : ""}`} onClick={toggleReportMode}>
-                {reportMode ? "Exit report" : "Report mode"}
-              </button>
-              <button className={`commercial-report-toggle ${comparisonActive ? "active" : ""}`} onClick={toggleCompare}>
-                Compare previous period
-              </button>
-              {reportMode && (
-                <button className={`commercial-report-toggle ${reportView === "sorter" ? "active" : ""}`} onClick={() => updateReportView(reportView === "sorter" ? "slide" : "sorter")}>
-                  {reportView === "sorter" ? "Slide view" : "Slide sorter"}
-                </button>
+              {!reportMode ? (
+                <>
+                  {/* Buttons moved to DashboardFilters */}
+                </>
+              ) : (
+                <div className="commercial-report-toolbar" data-testid="report-toolbar">
+                  <span className="commercial-report-toolbar-label">Report Mode</span>
+                  <strong>
+                    {slideDeck.slides.length ? `${slideDeck.index + 1} / ${slideDeck.slides.length}` : "0 / 0"}
+                  </strong>
+                  <span className="commercial-report-toolbar-title" title={slideDeck.slides[slideDeck.index]?.title}>
+                    {slideDeck.slides[slideDeck.index]?.title || "Waiting for slides"}
+                  </span>
+                </div>
               )}
             </div>
           </div>
-          <div className="commercial-topbar-controls">
-            <Suspense fallback={null}>
-              <DashboardFilters />
-            </Suspense>
-          </div>
+          {!reportMode ? (
+            <div className="commercial-topbar-controls">
+              <Suspense fallback={null}>
+                <DashboardFilters toggleReportMode={toggleReportMode} toggleCompare={toggleCompare} />
+              </Suspense>
+            </div>
+          ) : null}
         </header>
 
-        <main className="commercial-main">
-          {reportMode && reportView === "slide" && (
-            <div className="commercial-report-banner">
-              <div>
-                <span>Slide {activeIndex + 1} of {navItems.length}</span>
-                <strong>{activeNav}</strong>
-              </div>
-              <p>{activeNarrative.message}</p>
-            </div>
-          )}
-          {reportMode && reportView === "slide" && (
-            <section className="commercial-report-insights" aria-label="Report slide insights">
-              <div>
-                <span>Key Message</span>
-                <strong>{activeNarrative.message}</strong>
-              </div>
-              <div>
-                <span>Watch</span>
-                <strong>{activeNarrative.watch}</strong>
-              </div>
-              <div>
-                <span>Action</span>
-                <strong>{activeNarrative.action}</strong>
-              </div>
-            </section>
-          )}
-          {reportMode && reportView === "sorter" ? (
-            <section className="commercial-slide-sorter" aria-label="Report slide sorter">
-              <div className="commercial-slide-sorter-heading">
-                <div>
-                  <span>Brand Report</span>
-                  <strong>Slide Sorter</strong>
-                </div>
-                <p>Review every dashboard page as a reporting slide, then open any slide to continue the narrative.</p>
-              </div>
-              <div className="commercial-slide-sorter-grid">
-                {navItems.map((item, index) => (
-                  <Link key={item.label} href={item.href} className={`commercial-slide-sorter-card ${item.label === activeNav ? "active" : ""}`} onClick={() => updateReportView("slide")}>
-                    <div className="commercial-slide-sorter-preview">
-                      <span>{index + 1}</span>
-                      <img src={item.preview} alt="" />
-                    </div>
-                    <div className="commercial-slide-sorter-copy">
-                      <strong>{item.label}</strong>
-                      <p>{pageNarratives[item.label]?.message || pageSubtitles[item.label]}</p>
-                      <small>{pageNarratives[item.label]?.action}</small>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
+        <main className="commercial-main" data-testid="main-content">
+          {reportMode && slideDeck.view === "sorter" ? (
+            <ReportSlideSorter controller={slideDeck} />
           ) : (
-            <Suspense fallback={null}>
-              {children}
-            </Suspense>
+            <Suspense fallback={null}>{children}</Suspense>
           )}
+          {reportMode && slideDeck.view === "slide" && slideDeck.slides.length === 0 ? (
+            <div className="report-no-slides" data-testid="report-no-slides">
+              <Presentation size={28} />
+              <strong>This page has no container slides yet</strong>
+              <p>Wrap each chart, metric block, or signal grid in <code>&lt;ReportSlide&gt;</code> to make it presentable in report mode.</p>
+            </div>
+          ) : null}
         </main>
       </div>
 
-      <div className="commercial-ai-dock">
-        <Search size={16} />
-        <input placeholder="Ask BioHuez about sales, finance, campaigns, or inventory..." />
-        <button type="button">Overview</button>
-      </div>
+      {!reportMode ? (
+        <div className="commercial-ai-dock" data-testid="ai-dock">
+          <Search size={16} />
+          <input
+            placeholder="Ask BioHuez about sales, finance, campaigns, or inventory..."
+            data-testid="ai-dock-input"
+            suppressHydrationWarning
+          />
+          <kbd>⌘K</kbd>
+          <button type="button" data-testid="ai-dock-action">
+            <Sparkles size={14} />
+            Ask AI
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

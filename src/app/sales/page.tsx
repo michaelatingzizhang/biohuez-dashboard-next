@@ -1,7 +1,7 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
 
-import { useEffect, useState } from 'react'
+import { type DragEvent, type ReactNode, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
@@ -9,11 +9,31 @@ import { DataState } from '@/components/data-state'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
+import { ReportSlide } from '@/components/report-slide'
+import { cn } from '@/lib/utils'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   ComposedChart, AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, Cell
 } from 'recharts'
+import { Settings2, X, Plus, Check, GripVertical } from 'lucide-react'
 
 const SKU_COLORS: Record<string, string> = {
   'Black': '#2D4A27',
@@ -175,6 +195,81 @@ interface RepeatRecord {
 interface DemographicsData {
   repeat_weekly?: RepeatRecord[]
   repeat_monthly?: RepeatRecord[]
+}
+
+interface SalesKpiItem {
+  key: string
+  label: string
+  value: string
+  sublabel?: string
+  status?: 'normal' | 'warn' | 'alert'
+}
+
+function SortableSalesWidgetCard({
+  item,
+  active,
+  editing,
+  onToggle,
+}: {
+  item: SalesKpiItem
+  active: boolean
+  editing: boolean
+  onToggle: (key: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.key, disabled: !editing || !active })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'sales-widget-card',
+        editing && 'is-editing',
+        editing && active && 'is-draggable-widget',
+        editing && isDragging && 'is-dragging-widget',
+      )}
+    >
+      {editing && active ? (
+        <button
+          type="button"
+          className="sales-widget-drag-handle"
+          aria-label={`Reorder ${item.label}`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={13} strokeWidth={2.4} />
+        </button>
+      ) : null}
+      {editing ? (
+        <button
+          type="button"
+          className={`sales-widget-toggle ${active ? 'is-remove' : 'is-add'}`}
+          onClick={() => onToggle(item.key)}
+          aria-label={active ? `Remove ${item.label}` : `Add ${item.label}`}
+        >
+          {active ? <X size={12} strokeWidth={2.5} /> : <Plus size={12} strokeWidth={2.5} />}
+        </button>
+      ) : null}
+      <MetricCard
+        label={item.label}
+        value={item.value}
+        sublabel={item.sublabel}
+        status={active ? item.status : undefined}
+      />
+    </div>
+  )
 }
 
 function fmt(n: number | null | undefined, prefix = '') {
@@ -452,7 +547,17 @@ export default function SalesPage() {
   const [visibleSeries, setVisibleSeries] = useState<string[]>(['revenue', 'asp', 'adSpend', 'bestBsr'])
   const [chartStyle, setChartStyle] = useState<'line' | 'area'>('line')
   const [viewSaved, setViewSaved] = useState(false)
-  const [editingView, setEditingView] = useState(false)
+  const [editingWidgets, setEditingWidgets] = useState(false)
+  const [editingCharts, setEditingCharts] = useState(false)
+  const [draggedSeries, setDraggedSeries] = useState<string | null>(null)
+  const widgetSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
   const filters = useDashboardFilters()
   const params = useSearchParams()
   const comparisonActive = params.get('compare') === 'previous'
@@ -659,7 +764,7 @@ export default function SalesPage() {
       CAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
       blendedCAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
     }))
-  function buildOverviewKpis(periodSales: SalesRow[], periodAds: AdsRow[], sublabel?: string) {
+  function buildOverviewKpis(periodSales: SalesRow[], periodAds: AdsRow[], sublabel?: string): SalesKpiItem[] {
     const revenue = periodSales.reduce((s, r) => s + (r.revenue || 0), 0)
     const orders = periodSales.reduce((s, r) => s + (r.orders || 0), 0)
     const units = periodSales.reduce((s, r) => s + (r.units || 0), 0)
@@ -694,9 +799,53 @@ export default function SalesPage() {
     setVisibleKpis(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
   }
 
+  function handleWidgetDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setViewSaved(false)
+    setVisibleKpis(current => {
+      const oldIndex = current.indexOf(String(active.id))
+      const newIndex = current.indexOf(String(over.id))
+      if (oldIndex === -1 || newIndex === -1) return current
+      return arrayMove(current, oldIndex, newIndex)
+    })
+  }
+
   function toggleSeries(key: string) {
     setViewSaved(false)
     setVisibleSeries(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
+  }
+
+  function reorderSeries(targetKey: string) {
+    if (!draggedSeries || draggedSeries === targetKey) return
+    setViewSaved(false)
+    setVisibleSeries(current => {
+      if (!current.includes(draggedSeries) || !current.includes(targetKey)) return current
+      const next = current.filter(key => key !== draggedSeries)
+      const targetIndex = next.indexOf(targetKey)
+      next.splice(targetIndex, 0, draggedSeries)
+      return next
+    })
+  }
+
+  function handleSeriesDragStart(event: DragEvent<HTMLDivElement>, key: string) {
+    if (!editingCharts) return
+    setDraggedSeries(key)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', key)
+  }
+
+  function handleSeriesDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!editingCharts || !draggedSeries) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  function handleSeriesDrop(event: DragEvent<HTMLDivElement>, key: string) {
+    if (!editingCharts) return
+    event.preventDefault()
+    reorderSeries(key)
+    setDraggedSeries(null)
   }
 
   function updateChartStyle(value: 'line' | 'area') {
@@ -725,31 +874,35 @@ export default function SalesPage() {
   }
 
   function renderKpiGrid(items: typeof overviewKpis, title?: string, editable = false) {
-    const selectedItems = items.filter(item => visibleKpis.includes(item.key))
-    const displayItems = editable && editingView ? items : selectedItems
+    const selectedItems = visibleKpis
+      .map(key => items.find(item => item.key === key))
+      .filter((item): item is typeof items[number] => Boolean(item))
+    const hiddenItems = items.filter(item => !visibleKpis.includes(item.key))
+    const displayItems = editable && editingWidgets ? [...selectedItems, ...hiddenItems] : selectedItems
+    const activeItemKeys = selectedItems.map(item => item.key)
+    const grid = (
+      <div className="sales-overview-kpi-grid">
+        {displayItems.map(item => (
+          <SortableSalesWidgetCard
+            key={item.key}
+            item={item}
+            active={visibleKpis.includes(item.key)}
+            editing={editable && editingWidgets}
+            onToggle={toggleKpi}
+          />
+        ))}
+      </div>
+    )
     return (
       <div className="sales-kpi-panel">
         {title && <div className="sales-kpi-panel-title">{title}</div>}
-        <div className="sales-overview-kpi-grid">
-          {displayItems.map(item => {
-            const active = visibleKpis.includes(item.key)
-            return (
-              <div key={item.key} className={`sales-widget-card ${editable && editingView ? 'is-editing' : ''} ${editable && editingView && !active ? 'is-hidden-widget' : ''}`}>
-                {editable && editingView && (
-                  <button className={`sales-widget-remove ${active ? '' : 'is-restore'}`} onClick={() => toggleKpi(item.key)}>
-                    {active ? '×' : '+'}
-                  </button>
-                )}
-                <MetricCard
-                  label={item.label}
-                  value={item.value}
-                  sublabel={item.sublabel}
-                  status={active ? item.status : undefined}
-                />
-              </div>
-            )
-          })}
-        </div>
+        {editable && editingWidgets ? (
+          <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={handleWidgetDragEnd}>
+            <SortableContext items={activeItemKeys} strategy={rectSortingStrategy}>
+              {grid}
+            </SortableContext>
+          </DndContext>
+        ) : grid}
       </div>
     )
   }
@@ -800,89 +953,122 @@ export default function SalesPage() {
       boxShadow: '0 8px 18px rgba(20, 28, 22, 0.1)',
       fontSize: '0.74rem',
     }
+
+    function renderSeriesBand(key: string) {
+      const bandClass = [
+        'sales-band',
+        key === 'revenue' ? 'sales-band-large' : '',
+        key === 'adSpend' ? 'sales-band-bars' : '',
+        editingCharts ? 'is-editing-chart' : '',
+        editingCharts && draggedSeries === key ? 'is-dragging-chart' : '',
+      ].filter(Boolean).join(' ')
+
+      const label = key === 'revenue' ? 'Sales' : key === 'asp' ? 'ASP' : key === 'adSpend' ? 'Ads' : 'BSR'
+      let chart: ReactNode = null
+      let extra: ReactNode = null
+
+      if (key === 'revenue') {
+        chart = (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 12, right: 18, left: 72, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
+              <XAxis dataKey="date" hide />
+              <YAxis orientation="right" width={70} tickCount={4} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+              <Tooltip cursor={cursor} contentStyle={tooltipStyle} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Sales']} />
+              {chartStyle === 'area' ? (
+                <Area type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} fill="var(--biohuez-dark)" fillOpacity={0.11} dot={false} connectNulls name="Sales" />
+              ) : (
+                <Line type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} dot={false} connectNulls name="Sales" />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )
+      } else if (key === 'asp') {
+        chart = (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 6, right: 18, left: 72, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
+              <XAxis dataKey="date" hide />
+              <YAxis orientation="right" width={70} tickCount={4} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toFixed(2)} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+              <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney2(Number(value)), 'ASP']} />
+              {chartStyle === 'area' ? (
+                <Area type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} fill="var(--biohuez-sage)" fillOpacity={0.09} dot={false} connectNulls name="ASP" />
+              ) : (
+                <Line type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} dot={false} connectNulls name="ASP" />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )
+      } else if (key === 'adSpend') {
+        chart = (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} syncId="sales-overview" margin={{ top: 6, right: 18, left: 72, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
+              <XAxis dataKey="date" hide />
+              <YAxis orientation="right" width={70} tickCount={4} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+              <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Ad Spend']} />
+              {adSpendTypes.length > 0 ? adSpendTypes.map(type => (
+                <Bar key={type} dataKey={`adSpend_${type}`} stackId="adSpend" fill={AD_TYPE_COLORS[type]} opacity={0.58} radius={[2, 2, 0, 0]} name={AD_TYPE_LABELS[type]} />
+              )) : (
+                <Bar dataKey="adSpend" fill="var(--biohuez-gold)" opacity={0.5} radius={[2, 2, 0, 0]} name="Ad Spend" />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        )
+        extra = adSpendTypes.length > 0 ? (
+          <div className="sales-ad-type-legend">
+            {adSpendTypes.map(type => (
+              <span key={type}><i style={{ background: AD_TYPE_COLORS[type] }} />{type}</span>
+            ))}
+          </div>
+        ) : null
+      } else if (key === 'bestBsr') {
+        chart = (
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 6, right: 18, left: 72, bottom: 18 }}>
+              <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#7B837C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
+              <YAxis orientation="right" reversed width={70} tickCount={4} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => Number(v).toLocaleString()} domain={['dataMin', 'dataMax']} axisLine={false} tickLine={false} />
+              <Tooltip cursor={cursor} position={{ y: 8 }} contentStyle={compactTooltip} formatter={(value: unknown) => ['#' + Number(value).toLocaleString(), 'Best BSR']} />
+              {chartStyle === 'area' ? (
+                <Area type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} fill="var(--biohuez-gold)" fillOpacity={0.12} dot={false} connectNulls name="Best BSR" />
+              ) : (
+                <Line type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} dot={false} connectNulls name="Best BSR" />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )
+      }
+
+      return (
+        <div
+          key={key}
+          className={bandClass}
+          draggable={editingCharts}
+          onDragStart={event => handleSeriesDragStart(event, key)}
+          onDragOver={handleSeriesDragOver}
+          onDrop={event => handleSeriesDrop(event, key)}
+          onDragEnd={() => setDraggedSeries(null)}
+        >
+          <div className="sales-band-label">
+            <span className="sales-band-label-title">{label}</span>
+          </div>
+          {editingCharts ? (
+            <span className="sales-chart-drag-handle" aria-hidden>
+              <GripVertical size={13} strokeWidth={2.4} />
+            </span>
+          ) : null}
+          {chart}
+          {extra}
+        </div>
+      )
+    }
+
     return (
       <div className="sales-chart-panel">
         {title && <div className="sales-chart-card-title">{title}</div>}
         <div className="sales-stacked-chart">
-          {visibleSeries.includes('revenue') && (
-            <div className="sales-band sales-band-large">
-              <div className="sales-band-label">Sales</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 10, right: 18, left: 18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
-                  <XAxis dataKey="date" hide />
-                  <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={cursor} contentStyle={tooltipStyle} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Sales']} />
-                  {chartStyle === 'area' ? (
-                    <Area type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} fill="var(--biohuez-dark)" fillOpacity={0.11} dot={false} connectNulls name="Sales" />
-                  ) : (
-                    <Line type="monotone" dataKey="total" stroke="var(--biohuez-dark)" strokeWidth={2.5} dot={false} connectNulls name="Sales" />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          {visibleSeries.includes('asp') && (
-            <div className="sales-band">
-              <div className="sales-band-label">ASP</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
-                  <XAxis dataKey="date" hide />
-                  <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney2(Number(value)), 'ASP']} />
-                  {chartStyle === 'area' ? (
-                    <Area type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} fill="var(--biohuez-sage)" fillOpacity={0.09} dot={false} connectNulls name="ASP" />
-                  ) : (
-                    <Line type="monotone" dataKey="asp" stroke="var(--biohuez-sage)" strokeWidth={2} dot={false} connectNulls name="ASP" />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          {visibleSeries.includes('adSpend') && (
-            <div className="sales-band sales-band-bars">
-              <div className="sales-band-label">Ad Spend</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} syncId="sales-overview" margin={{ top: 2, right: 18, left: 18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
-                  <XAxis dataKey="date" hide />
-                  <YAxis orientation="right" width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => '$' + Number(v).toLocaleString()} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={cursor} contentStyle={compactTooltip} formatter={(value: unknown) => [fmtMoney(Number(value)), 'Ad Spend']} />
-                  {adSpendTypes.length > 0 ? adSpendTypes.map(type => (
-                    <Bar key={type} dataKey={`adSpend_${type}`} stackId="adSpend" fill={AD_TYPE_COLORS[type]} opacity={0.58} radius={[2, 2, 0, 0]} name={AD_TYPE_LABELS[type]} />
-                  )) : (
-                    <Bar dataKey="adSpend" fill="var(--biohuez-gold)" opacity={0.5} radius={[2, 2, 0, 0]} name="Ad Spend" />
-                  )}
-                </BarChart>
-              </ResponsiveContainer>
-              {adSpendTypes.length > 0 && (
-                <div className="sales-ad-type-legend">
-                  {adSpendTypes.map(type => (
-                    <span key={type}><i style={{ background: AD_TYPE_COLORS[type] }} />{type}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {visibleSeries.includes('bestBsr') && (
-            <div className="sales-band">
-              <div className="sales-band-label">BSR</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} syncId="sales-overview" margin={{ top: 4, right: 18, left: 18, bottom: 18 }}>
-                  <CartesianGrid strokeDasharray="1 5" stroke="#D8DDD7" vertical />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#7B837C' }} tickFormatter={formatChartDate} axisLine={false} tickLine={false} />
-                  <YAxis orientation="right" reversed width={70} tick={{ fontSize: 11, fill: '#6B746C' }} tickFormatter={v => Number(v).toLocaleString()} domain={['dataMin', 'dataMax']} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={cursor} position={{ y: 8 }} contentStyle={compactTooltip} formatter={(value: unknown) => ['#' + Number(value).toLocaleString(), 'Best BSR']} />
-                  {chartStyle === 'area' ? (
-                    <Area type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} fill="var(--biohuez-gold)" fillOpacity={0.12} dot={false} connectNulls name="Best BSR" />
-                  ) : (
-                    <Line type="monotone" dataKey="bestBsr" stroke="var(--biohuez-gold)" strokeWidth={1.9} dot={false} connectNulls name="Best BSR" />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          {visibleSeries.map(key => renderSeriesBand(key))}
         </div>
       </div>
     )
@@ -943,21 +1129,46 @@ export default function SalesPage() {
             <TabsTrigger value="intelligence">Sales Mix</TabsTrigger>
             <TabsTrigger value="traffic">Traffic</TabsTrigger>
             <TabsTrigger value="bsr">BSR</TabsTrigger>
+            <TabsTrigger value="ads">Ads</TabsTrigger>
             <TabsTrigger value="unit-economics">Unit Economics</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="overview">
           <div className="sales-overview-page">
+            <ReportSlide
+              title="Sales KPI Widgets"
+              order={1}
+              message="Top-line sales, order, unit, and paid efficiency metrics for the selected period."
+              watch="Revenue, ACOS, ROAS, and pROAS together show whether scale is profitable."
+              action="Use Edit Widgets to tailor the KPI set before presenting."
+            >
             <section className="sales-overview-kpis">
               <div className="sales-kpi-picker">
                 <div className="sales-view-actions">
-                  <button className="sales-save-view-button secondary" onClick={() => setEditingView(!editingView)}>
-                    {editingView ? 'Done editing' : 'Edit view'}
+                  <button 
+                    className={`sales-edit-pill ${editingWidgets ? 'is-active' : ''}`} 
+                    onClick={() => setEditingWidgets(current => !current)}
+                    type="button"
+                    title="Edit dashboard widgets"
+                  >
+                    {editingWidgets ? (
+                      <>
+                        <Check size={14} strokeWidth={2.5} />
+                        <span>Done</span>
+                      </>
+                    ) : (
+                      <>
+                        <Settings2 size={14} />
+                        <span>Edit Widgets</span>
+                      </>
+                    )}
                   </button>
-                  <button className="sales-save-view-button" onClick={saveSalesView}>
-                    {viewSaved ? 'Saved' : 'Save view'}
-                  </button>
+                  {!editingWidgets && (
+                    <button className="sales-save-pill" onClick={saveSalesView}>
+                      {viewSaved ? 'Saved' : 'Save Widgets'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -970,36 +1181,65 @@ export default function SalesPage() {
                 renderKpiGrid(overviewKpis, undefined, true)
               )}
             </section>
+            </ReportSlide>
 
+            <ReportSlide
+              title="Sales Performance Trend"
+              order={2}
+              message="Sales is the primary chart, with ASP, ads, and BSR shown as supporting bands."
+              watch="Look for revenue moves that do not match ASP, paid spend, or rank direction."
+              action="Use Edit Charts to choose and reorder the chart bands for the report."
+            >
             <section>
             <div>
               <div className="sales-chart-toolbar">
                 <SectionHeader title={intervalTitle(filters.interval)} subtitle={chartSubtitle(overviewChartData)} />
                 <div className="sales-chart-controls">
-                  <div className="sales-chart-style-toggle">
-                    {(['line', 'area'] as const).map(value => (
-                      <button key={value} className={chartStyle === value ? 'active' : ''} onClick={() => updateChartStyle(value)}>
-                        {value === 'line' ? 'Line' : 'Area'}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="sales-chart-picker">
-                    {[
-                      { key: 'revenue', label: 'Sales' },
-                      { key: 'asp', label: 'ASP' },
-                      { key: 'adSpend', label: 'Ad Spend' },
-                      { key: 'bestBsr', label: 'BSR' },
-                    ].map(item => (
-                      <label key={item.key} className="sales-kpi-option">
-                        <input
-                          type="checkbox"
-                          checked={visibleSeries.includes(item.key)}
-                          onChange={() => toggleSeries(item.key)}
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <button 
+                    className={`sales-edit-pill ${editingCharts ? 'is-active' : ''}`}
+                    onClick={() => setEditingCharts(current => !current)}
+                    type="button"
+                    title="Edit chart series"
+                  >
+                    {editingCharts ? (
+                      <>
+                        <Check size={14} strokeWidth={2.5} />
+                        <span>Done</span>
+                      </>
+                    ) : (
+                      <>
+                        <Settings2 size={14} />
+                        <span>Edit Charts</span>
+                      </>
+                    )}
+                  </button>
+                  {editingCharts && (
+                    <div className="sales-chart-picker">
+                      {[
+                        { key: 'revenue', label: 'Sales' },
+                        { key: 'asp', label: 'ASP' },
+                        { key: 'adSpend', label: 'Ad Spend' },
+                        { key: 'bestBsr', label: 'BSR' },
+                      ].map(item => {
+                        const active = visibleSeries.includes(item.key)
+                        return (
+                          <button
+                            key={item.key}
+                            className={`sales-series-pill ${active ? 'is-active' : 'is-inactive'}`}
+                            onClick={() => toggleSeries(item.key)}
+                          >
+                            {active ? <Check size={12} strokeWidth={2.5} /> : <Plus size={12} strokeWidth={2.5} />}
+                            <span>{item.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {!editingCharts && (
+                    <button className="sales-save-pill" onClick={saveSalesView}>
+                      {viewSaved ? 'Saved' : 'Save Charts'}
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="dashboard-chart-card sales-overview-chart">
@@ -1010,8 +1250,16 @@ export default function SalesPage() {
               </div>
             </div>
             </section>
+            </ReportSlide>
           </div>
 
+          <ReportSlide
+            title="SKU Performance"
+            order={3}
+            message="SKU-level table showing sales, order volume, ASP, AOV, and ad-attributed mix."
+            watch="Check whether sales concentration or ad-attributed share is clustered in one SKU."
+            action="Export the table for appendix or weekly follow-up."
+          >
           <div className="sales-table-heading">
             <SectionHeader title="SKU Performance" subtitle="Sales, ASP, AOV, ad-attributed sales, and ad-attributed unit mix." />
             <button className="sales-export-button" onClick={exportSkuPerformance}>Download Excel</button>
@@ -1046,9 +1294,17 @@ export default function SalesPage() {
               </tbody>
             </table>
           </div>
+          </ReportSlide>
         </TabsContent>
 
         <TabsContent value="time-series">
+          <ReportSlide
+            title="SKU Time Series"
+            order={4}
+            message="Sales, units, and ASP over time by SKU."
+            watch="SKU lines reveal whether demand, price, or mix is driving total sales movement."
+            action="Use the top filters to switch aggregation and selected SKU before report mode."
+          >
           <div className="sales-time-series-page">
             <div className="sales-time-series-intro">
               <SectionHeader
@@ -1075,9 +1331,17 @@ export default function SalesPage() {
               value => fmtMoney2(value),
             )}
           </div>
+          </ReportSlide>
         </TabsContent>
 
         <TabsContent value="intelligence">
+          <ReportSlide
+            title="Sales Mix Intelligence"
+            order={5}
+            message="Weekly sales momentum, SKU movers, BSR movers, and diagnostic drivers."
+            watch="Focus on negative revenue movement, high ACOS, and rank deterioration."
+            action="Use this slide to align commercial actions for the next review period."
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard
               label="Latest Week Revenue"
@@ -1219,8 +1483,16 @@ export default function SalesPage() {
               </tbody>
             </table>
           </div>
+          </ReportSlide>
         </TabsContent>
         <TabsContent value="traffic">
+          <ReportSlide
+            title="Traffic And Session Quality"
+            order={6}
+            message="Sessions, clicks, conversion, and artwork-change impact for the selected period."
+            watch="Paid traffic should translate into sessions and conversion, not only clicks."
+            action="Use this slide when reviewing listing artwork and traffic quality."
+          >
           <div className="sales-traffic-page">
             <div className="sales-traffic-intro">
               <SectionHeader
@@ -1301,8 +1573,16 @@ export default function SalesPage() {
               <span>Brand-level add-to-cart data is not present in the current Sales endpoint, so this view uses sessions, clicks, units, and conversion rate as the traffic quality proxy.</span>
             </div>
           </div>
+          </ReportSlide>
         </TabsContent>
         <TabsContent value="bsr">
+          <ReportSlide
+            title="BSR Rank"
+            order={7}
+            message="Best Seller Rank movement over time plus the latest rank snapshot."
+            watch="Lower rank is better; compare direction against sales and ad spend."
+            action="Use rank movement to explain market visibility changes."
+          >
           <SectionHeader title="BSR Rank Over Time" subtitle="Lower rank = better position" />
           <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={260}>
@@ -1341,8 +1621,16 @@ export default function SalesPage() {
               </tbody>
             </table>
           </div>
+          </ReportSlide>
         </TabsContent>
         <TabsContent value="ads">
+          <ReportSlide
+            title="Advertising Efficiency"
+            order={8}
+            message="Ad spend, ad sales, ACOS, ROAS, ad type mix, and daily ACOS."
+            watch="High ACOS or weak ROAS shows paid efficiency pressure."
+            action="Use this slide to decide campaign budget and optimization actions."
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard label="Total Ad Spend" value={fmtMoney(totalAdSpend)} />
             <MetricCard label="Total Ad Sales" value={fmtMoney(totalAdSales)} />
@@ -1379,8 +1667,16 @@ export default function SalesPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+          </ReportSlide>
         </TabsContent>
         <TabsContent value="unit-economics">
+          <ReportSlide
+            title="Unit Economics"
+            order={9}
+            message="pROAS and CAC over time with break-even reference."
+            watch="pROAS below 1.0 means paid acquisition is below break-even."
+            action="Use this slide to connect sales growth to contribution economics."
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard label="pROAS (All)" value={totalAdSpend > 0 ? ((totalAdSales - 4.93 * totalUnits) / totalAdSpend).toFixed(2) + 'x' : '—'} />
             <MetricCard label="CAC (Ad)" value={totalAdOrders > 0 ? fmtMoney2(totalAdSpend / totalAdOrders) : '—'} />
@@ -1417,8 +1713,16 @@ export default function SalesPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+          </ReportSlide>
         </TabsContent>
         <TabsContent value="customer-journey">
+          <ReportSlide
+            title="Customer Journey"
+            order={10}
+            message="New versus repeat customer and revenue behavior over time."
+            watch="Repeat rate and repeat revenue indicate whether acquisition is compounding."
+            action="Use this slide for retention and lifecycle follow-up."
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard
               label="Repeat Rate (Latest Month)"
@@ -1500,6 +1804,7 @@ export default function SalesPage() {
               </div>
             </>
           )}
+          </ReportSlide>
         </TabsContent>
       </Tabs>
     </div>

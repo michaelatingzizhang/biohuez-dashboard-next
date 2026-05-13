@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Presentation, GitMerge, Sliders } from 'lucide-react'
 
 export interface DashboardFilterState {
   from: string
@@ -35,11 +36,12 @@ export function useDashboardFilters(): DashboardFilterState {
   }
 }
 
-export function DashboardFilters() {
+export function DashboardFilters({ toggleReportMode, toggleCompare }: { toggleReportMode?: () => void; toggleCompare?: () => void } = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const [collapsed, setCollapsed] = useState(false)
+  const [viewMenuOpen, setViewMenuOpen] = useState(false)
 
   const filters = useDashboardFilters()
   const comparisonActive = params.get('compare') === 'previous'
@@ -144,13 +146,8 @@ export function DashboardFilters() {
 
   return (
     <div className="dashboard-filter-shell">
-      <div className="dashboard-filter-grid" style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(520px, 1.35fr) minmax(220px, 0.48fr) minmax(190px, 0.42fr) minmax(210px, 0.34fr)',
-        gap: 12,
-        alignItems: 'center',
-      }}>
-      <div>
+      <div className="dashboard-filter-grid">
+      <div className="dashboard-filter-presets">
         <div className="dashboard-interval-groups">
           {intervalGroups.map(group => (
             <div key={group.label} className={`dashboard-interval-group ${group.disabled ? 'is-disabled' : ''}`}>
@@ -177,41 +174,91 @@ export function DashboardFilters() {
 
       <div className="dashboard-custom-group">
         <div className="dashboard-interval-label">Custom</div>
-        <div className="dashboard-granularity-toggle">
-          {['daily', 'weekly'].map(value => (
-            <button key={value} onClick={() => setGranularity(value)} className={filters.granularity === value ? 'active' : ''}>
-              {value === 'daily' ? 'Daily' : 'Weekly'}
-            </button>
-          ))}
-        </div>
         <div className="dashboard-custom-dates">
           <FilterInput label="From" type="date" value={filters.from} onChange={value => updateFilter('from', value)} compact />
           <FilterInput label="To" type="date" value={filters.to} onChange={value => updateFilter('to', value)} compact />
         </div>
       </div>
 
-      <div>
-        <label style={{ display: 'block', fontSize: '0.72rem', color: '#666', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>SKU</label>
-        <select
-          value={filters.sku}
-          onChange={event => updateFilter('sku', event.target.value)}
-          style={{
-            width: '100%',
-            border: '1px solid rgba(34, 44, 38, 0.14)',
-            borderRadius: 9,
-            padding: '8px 10px',
-            fontSize: '0.82rem',
-            background: 'white',
-            color: '#1A1A1A',
-          }}
-        >
-          {SKU_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </div>
-
-      <div className="dashboard-filter-actions">
-        <button className="dashboard-filter-action-button" onClick={saveFilterView}>{filterSaved ? 'Saved' : 'Save view'}</button>
-        <button className="dashboard-filter-action-button" onClick={resetFilters} disabled={!hasActiveFilters}>Reset</button>
+      <div className="dashboard-filter-controls">
+        <div className="dashboard-filter-tools">
+          <div className="dashboard-view-menu">
+            <button
+              className="commercial-report-toggle"
+              type="button"
+              aria-label="View options"
+              title="View options"
+              onClick={() => setViewMenuOpen(current => !current)}
+            >
+              <Sliders size={16} strokeWidth={2.2} />
+            </button>
+            {viewMenuOpen ? (
+              <div className="dashboard-view-menu-popover">
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveFilterView()
+                    setViewMenuOpen(false)
+                  }}
+                  className="dashboard-filter-action-button"
+                >
+                  {filterSaved ? 'Saved' : 'Save view'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetFilters()
+                    setViewMenuOpen(false)
+                  }}
+                  className="dashboard-filter-action-button"
+                  disabled={!hasActiveFilters}
+                >
+                  Reset
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <button
+            className="commercial-report-toggle"
+            onClick={toggleReportMode || (() => {})}
+            data-testid="report-mode-enter"
+            title="Enter report mode (each container becomes one slide)"
+          >
+            <Presentation size={16} strokeWidth={2.2} />
+            Report mode
+          </button>
+          <button
+            className="commercial-report-toggle"
+            onClick={toggleCompare || (() => {})}
+            data-testid="compare-toggle"
+            title="Toggle compare previous period"
+            aria-pressed={comparisonActive}
+          >
+            <GitMerge size={16} strokeWidth={2.2} />
+            Compare
+          </button>
+        </div>
+        <div className="dashboard-filter-secondary">
+          <select
+            value={filters.sku}
+            onChange={event => updateFilter('sku', event.target.value)}
+            className="dashboard-sku-select"
+            aria-label="SKU"
+          >
+            {SKU_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <div className="dashboard-granularity-toggle">
+            {['daily', 'weekly'].map(value => (
+              <button
+                key={value}
+                onClick={() => setGranularity(value)}
+                className={filters.granularity === value ? 'active' : ''}
+              >
+                {value === 'daily' ? 'Daily' : 'Weekly'}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       </div>
     </div>
@@ -227,20 +274,13 @@ function FilterInput({ label, type, value, onChange, compact }: {
 }) {
   return (
     <div>
-      {!compact && <label style={{ display: 'block', fontSize: '0.72rem', color: '#666', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>{label}</label>}
+      {!compact && <label className="dashboard-filter-input-label">{label}</label>}
       <input
         aria-label={label}
         type={type}
         value={value}
         onChange={event => onChange(event.target.value)}
-        style={{
-          width: '100%',
-          border: '1px solid rgba(34, 44, 38, 0.14)',
-          borderRadius: 9,
-          padding: '8px 10px',
-          fontSize: '0.82rem',
-          color: '#1A1A1A',
-        }}
+        className="dashboard-filter-input"
       />
     </div>
   )
@@ -266,7 +306,6 @@ export function normalizeSku(value: unknown) {
     'zh-fh-1b': 'black',
     'zh-fh-3c': 'chocolate',
     'zh-fh-5cl': 'cream latte',
-    'zh-fh-6r': 'red',
     'black (1b)': 'black',
     'chocolate (3c)': 'chocolate',
   }
