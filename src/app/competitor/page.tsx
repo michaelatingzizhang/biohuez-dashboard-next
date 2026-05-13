@@ -7,6 +7,7 @@ import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { MetricCard } from '@/components/metric-card'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface CompetitorRow {
@@ -245,7 +246,7 @@ export default function CompetitorPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Competitor</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>BSR comparison and Brand Analytics competitive data</p>
 
-      <Tabs defaultValue="bsr">
+      <Tabs defaultValue="intelligence">
         <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
           <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
           <TabsTrigger value="bsr">BSR Comparison</TabsTrigger>
@@ -255,6 +256,13 @@ export default function CompetitorPage() {
         </TabsList>
 
         <TabsContent value="intelligence">
+          <ReportSlide
+            title="Competitor Executive Summary"
+            message="This slide should show how BioHuez is positioned against key competitors on rank and price."
+            watch="Best BioHuez BSR, best competitor BSR, rank gap, competitor pricing, and top signals."
+            action="Use this slide to frame the competitive pressure before digging into snapshots."
+            order={1}
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard
               label="Best BioHuez BSR"
@@ -281,7 +289,15 @@ export default function CompetitorPage() {
           </div>
 
           <SignalGrid signals={insights.signals} />
+          </ReportSlide>
 
+          <ReportSlide
+            title="Competitor Positioning Detail"
+            message="This slide should show the exact competitor threats, rank gaps, and price position behind the summary."
+            watch="Rank gap table, BioHuez BSR movers, top competitor threats, and price positioning."
+            action="Use this slide to support pricing, ranking, and listing strategy decisions."
+            order={2}
+          >
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
             <div>
               <SectionHeader title="Rank Gap Table" subtitle="Current BioHuez and competitor rank positioning" />
@@ -392,6 +408,7 @@ export default function CompetitorPage() {
               </tbody>
             </table>
           </div>
+          </ReportSlide>
         </TabsContent>
 
         <TabsContent value="bsr">

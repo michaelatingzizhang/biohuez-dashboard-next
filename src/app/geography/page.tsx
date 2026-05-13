@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts'
 
 interface StateRow {
@@ -178,6 +179,13 @@ export default function GeographyPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Geography</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Shipment geography, city concentration, and SKU distribution</p>
 
+      <ReportSlide
+        title="Geography Executive Summary"
+        message="This slide should show where demand is concentrated and whether the business is overly dependent on a few products or regions."
+        watch="Top states, state coverage, market concentration, and SKU concentration signals."
+        action="Use this slide to frame the discussion around market concentration and regional demand quality."
+        order={1}
+      >
       {states.length > 0 && (
         <>
           <SectionHeader title="State Performance" subtitle={`Shipment-level view${data?.latest_month ? ` · Latest month ${data.latest_month}` : ''}`} />
@@ -218,7 +226,15 @@ export default function GeographyPage() {
           {insights?.signals && <SignalGrid signals={insights.signals} />}
         </>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Geography Performance Detail"
+        message="This slide should show the actual revenue distribution across states or fallback SKU geography proxies."
+        watch="Revenue by state, latest state and city modules, and the biggest city or state contributors."
+        action="Use this slide to identify where demand is concentrated and where growth pockets might exist."
+        order={2}
+      >
       {states.length === 0 ? (
         <>
           <div style={{ background: '#FFF8E1', border: '1px solid #E67E22', borderRadius: 8, padding: 16, marginBottom: 20, color: '#8B5E00', fontSize: '0.85rem' }}>
@@ -401,7 +417,15 @@ export default function GeographyPage() {
           )}
         </>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Geography Concentration Tables"
+        message="This slide should act as the appendix for regional and SKU concentration details."
+        watch="Market concentration rows and SKU dependence by revenue share."
+        action="Use this slide when someone wants the exact breakdown behind the concentration story."
+        order={3}
+      >
       {skuConcentration.length > 0 && (
         <>
           <SectionHeader title="SKU Concentration" subtitle="Revenue dependency by product variant" />
@@ -432,6 +456,7 @@ export default function GeographyPage() {
           </div>
         </>
       )}
+      </ReportSlide>
     </div>
   )
 }

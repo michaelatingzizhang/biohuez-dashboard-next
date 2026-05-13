@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { SectionHeader } from '@/components/section-header'
 import { DataState } from '@/components/data-state'
+import { ReportSlide } from '@/components/report-slide'
 
 interface TableStatus {
   table: string
@@ -77,36 +78,49 @@ export default function SystemStatusPage() {
         Database table health · Last checked {lastRefresh.toLocaleTimeString()}
       </p>
 
-      {/* Overall health */}
-      <div style={{ background: 'white', borderRadius: 10, padding: 20, marginBottom: 20, borderLeft: `4px solid ${healthColor}`, boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 14, height: 14, borderRadius: '50%', background: healthColor }} />
-          <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1A1A1A' }}>
-            {loading ? 'Checking...' : `${okCount} / ${total} tables healthy`}
-          </span>
-          {lastSync && (
-            <span style={{ fontSize: '0.8rem', color: '#888', marginLeft: 'auto' }}>
-              Last sync: {lastSync.slice(0, 10)}
+      <ReportSlide
+        title="System Health"
+        message="This slide should confirm whether the dashboard data sources are healthy enough for client-facing reporting."
+        watch="Healthy table count, last sync date, and any connection failure."
+        action="Use this slide before a demo or report review to validate data readiness."
+        order={1}
+      >
+        <div style={{ background: 'white', borderRadius: 10, padding: 20, marginBottom: 20, borderLeft: `4px solid ${healthColor}`, boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', background: healthColor }} />
+            <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1A1A1A' }}>
+              {loading ? 'Checking...' : `${okCount} / ${total} tables healthy`}
             </span>
+            {lastSync && (
+              <span style={{ fontSize: '0.8rem', color: '#888', marginLeft: 'auto' }}>
+                Last sync: {lastSync.slice(0, 10)}
+              </span>
+            )}
+          </div>
+          {!loading && total > 0 && (
+            <div style={{ marginTop: 10, background: '#F5F5F5', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+              <div style={{ width: `${healthPct * 100}%`, height: '100%', background: healthColor, borderRadius: 4, transition: 'width 0.5s' }} />
+            </div>
           )}
         </div>
-        {!loading && total > 0 && (
-          <div style={{ marginTop: 10, background: '#F5F5F5', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-            <div style={{ width: `${healthPct * 100}%`, height: '100%', background: healthColor, borderRadius: 4, transition: 'width 0.5s' }} />
-          </div>
-        )}
-      </div>
 
-      {loading && <div style={{ padding: 20, color: '#888', textAlign: 'center' }}>Checking database tables...</div>}
-      {!loading && data?.error ? (
-        <div style={{ marginBottom: 16 }}>
-          <DataState variant="error" title="Database connection unavailable" description={data.error} />
-        </div>
-      ) : null}
+        {loading && <div style={{ padding: 20, color: '#888', textAlign: 'center' }}>Checking database tables...</div>}
+        {!loading && data?.error ? (
+          <div style={{ marginBottom: 16 }}>
+            <DataState variant="error" title="Database connection unavailable" description={data.error} />
+          </div>
+        ) : null}
+      </ReportSlide>
 
       {/* Table cards */}
       {!loading && (
-        <>
+        <ReportSlide
+          title="System Table Detail"
+          message="This slide should show exactly which data tables are healthy, empty, missing, or failing."
+          watch="Row counts, refresh dates, and table-specific errors."
+          action="Use this slide when you need to pinpoint a broken connector or stale dataset."
+          order={2}
+        >
           <SectionHeader title="Table Details" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
             {tables.map(t => {
@@ -160,7 +174,7 @@ export default function SystemStatusPage() {
               )
             })}
           </div>
-        </>
+        </ReportSlide>
       )}
     </div>
   )

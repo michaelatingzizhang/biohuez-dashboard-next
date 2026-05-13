@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { buildReportSlideKey } from "@/lib/report-library"
 
 /**
  * Wraps a single visual container so it can be treated as one slide
@@ -33,6 +34,7 @@ export function ReportSlide({
   return (
     <section
       data-report-slide=""
+      data-slide-key={buildReportSlideKey(title)}
       data-slide-title={title}
       data-slide-order={order ?? ""}
       data-slide-summary={message || watch || action || ""}

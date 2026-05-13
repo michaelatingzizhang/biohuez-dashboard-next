@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Grid3x3, LayoutTemplate, Maximize2, PanelsTo
 import { cn } from "@/lib/utils"
 
 interface SlideMeta {
+  key: string
   title: string
   summary: string
   order: number
@@ -19,45 +20,80 @@ interface SlideMeta {
  * Returns the controller used by the topbar to render slide nav.
  */
 export function useReportSlideDeck(reportMode: boolean, pathname: string) {
+  return useReportSlideDeckWithPaging(reportMode, pathname, {})
+}
+
+export function useReportSlideDeckWithPaging(
+  reportMode: boolean,
+  pathname: string,
+  callbacks: {
+    onPastEnd?: () => void
+    onPastStart?: () => void
+  },
+  requestedSlideKey?: string | null,
+) {
   const [slides, setSlides] = React.useState<SlideMeta[]>([])
   const [index, setIndex] = React.useState(0)
   const [view, setView] = React.useState<"slide" | "sorter">("slide")
+  const { onPastEnd, onPastStart } = callbacks
 
-  // Re-scan on report-mode toggle / pathname change. Use MutationObserver
-  // to catch async hydration so first-render slides are picked up.
+  const rescanSlides = React.useCallback(() => {
+    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-report-slide]"))
+    const next: SlideMeta[] = els.map((el) => ({
+      key: el.dataset.slideKey || "",
+      title: el.dataset.slideTitle || "Untitled",
+      summary: el.dataset.slideSummary || "",
+      order: Number(el.dataset.slideOrder) || 0,
+      el,
+    }))
+    next.sort((a, b) => a.order - b.order)
+    setSlides(next)
+  }, [])
+
+  // Re-scan on report-mode toggle / pathname change and keep observing while
+  // report mode is active so async data loads do not strand the sidebar at 0/0.
   React.useEffect(() => {
     if (!reportMode) {
       setSlides([])
       setIndex(0)
       return
     }
-    let timer: number | undefined
-    function rescan() {
-      const els = Array.from(document.querySelectorAll<HTMLElement>("[data-report-slide]"))
-      const next: SlideMeta[] = els.map((el) => ({
-        title: el.dataset.slideTitle || "Untitled",
-        summary: el.dataset.slideSummary || "",
-        order: Number(el.dataset.slideOrder) || 0,
-        el,
-      }))
-      next.sort((a, b) => a.order - b.order)
-      setSlides(next)
-    }
-    rescan()
-    timer = window.setInterval(rescan, 600)
-    const stop = window.setTimeout(() => {
-      if (timer) window.clearInterval(timer)
-    }, 4000)
+    rescanSlides()
+    const observer = new MutationObserver(() => {
+      rescanSlides()
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-report-slide", "data-slide-key", "data-slide-title", "data-slide-order", "data-slide-summary"],
+    })
+    const raf = window.requestAnimationFrame(() => {
+      rescanSlides()
+    })
     return () => {
-      if (timer) window.clearInterval(timer)
-      window.clearTimeout(stop)
+      window.cancelAnimationFrame(raf)
+      observer.disconnect()
     }
-  }, [reportMode, pathname])
+  }, [reportMode, pathname, rescanSlides])
 
   // Reset index whenever route changes
   React.useEffect(() => {
     setIndex(0)
   }, [pathname])
+
+  React.useEffect(() => {
+    setIndex((current) => {
+      if (!slides.length) return 0
+      return Math.min(current, slides.length - 1)
+    })
+  }, [slides.length])
+
+  React.useEffect(() => {
+    if (!requestedSlideKey || !slides.length) return
+    const matchIndex = slides.findIndex((slide) => slide.key === requestedSlideKey)
+    if (matchIndex >= 0) setIndex(matchIndex)
+  }, [requestedSlideKey, slides])
 
   // Apply DOM classes whenever active index or slides change
   React.useEffect(() => {
@@ -79,15 +115,43 @@ export function useReportSlideDeck(reportMode: boolean, pathname: string) {
   }, [reportMode, view, slides, index])
 
   // Keyboard navigation in slide mode
+  const next = React.useCallback(() => {
+    setIndex((v) => {
+      if (!slides.length) {
+        onPastEnd?.()
+        return 0
+      }
+      if (v >= slides.length - 1) {
+        onPastEnd?.()
+        return v
+      }
+      return v + 1
+    })
+  }, [slides.length, onPastEnd])
+
+  const prev = React.useCallback(() => {
+    setIndex((v) => {
+      if (!slides.length) {
+        onPastStart?.()
+        return 0
+      }
+      if (v <= 0) {
+        onPastStart?.()
+        return 0
+      }
+      return v - 1
+    })
+  }, [slides.length, onPastStart])
+
   React.useEffect(() => {
     if (!reportMode || view !== "slide") return
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return
       if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
-        setIndex((v) => (slides.length ? Math.min(v + 1, slides.length - 1) : 0))
+        next()
       } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
-        setIndex((v) => Math.max(v - 1, 0))
+        prev()
       } else if (e.key === "Home") {
         setIndex(0)
       } else if (e.key === "End") {
@@ -96,7 +160,7 @@ export function useReportSlideDeck(reportMode: boolean, pathname: string) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [reportMode, view, slides.length])
+  }, [reportMode, view, next, prev, slides.length])
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -110,8 +174,8 @@ export function useReportSlideDeck(reportMode: boolean, pathname: string) {
 
   return {
     slides, index, setIndex, view, setView,
-    next: () => setIndex((v) => (slides.length ? Math.min(v + 1, slides.length - 1) : 0)),
-    prev: () => setIndex((v) => Math.max(v - 1, 0)),
+    next,
+    prev,
   }
 }
 
@@ -119,11 +183,21 @@ export function ReportSlideSidebar({
   controller,
   pageTitle,
   pageSubtitle,
+  pagePosition,
+  deckLabel,
+  onOpenBuilder,
+  onNextPage,
+  onPrevPage,
   onExit,
 }: {
   controller: ReturnType<typeof useReportSlideDeck>
   pageTitle: string
   pageSubtitle?: string
+  pagePosition?: string
+  deckLabel?: string
+  onOpenBuilder: () => void
+  onNextPage: () => void
+  onPrevPage: () => void
   onExit: () => void
 }) {
   const { slides, index, setIndex, view, setView, prev, next } = controller
@@ -151,6 +225,7 @@ export function ReportSlideSidebar({
       <div className="commercial-report-sidebar-title">
         <span>Presentation Mode</span>
         <strong>{pageTitle}</strong>
+        {pagePosition ? <em>{pagePosition}</em> : null}
         {pageSubtitle ? <p>{pageSubtitle}</p> : null}
       </div>
 
@@ -172,6 +247,12 @@ export function ReportSlideSidebar({
         >
           <LayoutTemplate size={13} />
           Sorter
+        </button>
+      </div>
+
+      <div className="commercial-report-builder-row">
+        <button type="button" className="commercial-report-builder-button" onClick={onOpenBuilder} data-testid="report-builder-open">
+          {deckLabel || "Build Big Report"}
         </button>
       </div>
 
@@ -223,7 +304,7 @@ export function ReportSlideSidebar({
           data-testid="report-slide-prev"
         >
           <ChevronLeft size={15} />
-          Previous
+          Prev Slide
         </button>
         <button
           type="button"
@@ -232,7 +313,18 @@ export function ReportSlideSidebar({
           disabled={!slides.length || index === slides.length - 1}
           data-testid="report-slide-next"
         >
-          Next
+          Next Slide
+          <ChevronRight size={15} />
+        </button>
+      </div>
+
+      <div className="commercial-report-page-jump">
+        <button type="button" className="commercial-report-step" onClick={onPrevPage} data-testid="report-page-prev">
+          <ChevronLeft size={15} />
+          Previous Page
+        </button>
+        <button type="button" className="commercial-report-step" onClick={onNextPage} data-testid="report-page-next">
+          Next Page
           <ChevronRight size={15} />
         </button>
       </div>

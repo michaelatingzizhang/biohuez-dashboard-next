@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { SectionHeader } from '@/components/section-header'
 import { MetricCard } from '@/components/metric-card'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 import { BarChart, Bar, ComposedChart, Area, Line, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface DowRow { day: string; orders: number; revenue: number }
@@ -139,7 +140,13 @@ export default function SeasonalityPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Seasonality</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Order patterns by day, week, and month</p>
 
-      {/* Quick stats */}
+      <ReportSlide
+        title="Seasonality Outlook"
+        message="This slide should summarize whether short-term demand is strengthening, weakening, or becoming more volatile."
+        watch="Peak periods, latest week movement, 4-week demand change, volatility, and forecast signals."
+        action="Use this slide to set expectations for near-term inventory and campaign planning."
+        order={1}
+      >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
         <div style={{ background: 'white', borderRadius: 10, padding: '14px 16px', borderLeft: '4px solid #2D4A27', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
           <div style={{ fontSize: '0.72rem', color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Peak Day</div>
@@ -208,7 +215,15 @@ export default function SeasonalityPage() {
           </div>
         </>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Seasonality Pattern Readout"
+        message="This slide should show the strongest and weakest demand windows across the historical period."
+        watch="Peak periods, slow periods, and weekly momentum versus the rolling average."
+        action="Use this slide to align stock and promotion planning to recurring demand windows."
+        order={2}
+      >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
         <div>
           <SectionHeader title="Peak Periods" subtitle="Strongest observed demand periods" />
@@ -279,8 +294,15 @@ export default function SeasonalityPage() {
           </div>
         </>
       )}
+      </ReportSlide>
 
-      {/* Day of week */}
+      <ReportSlide
+        title="Seasonality Detail Charts"
+        message="This slide should provide the detailed chart appendix for day, month, week, and hour demand patterns."
+        watch="Orders by day, monthly orders and revenue, weekly trend, and hour-of-day behavior."
+        action="Use this slide when you want the exact pattern behind the summary call."
+        order={3}
+      >
       {day_of_week.length > 0 && (
         <>
           <SectionHeader title="Orders by Day of Week" subtitle="Total orders per day across all history" />
@@ -365,6 +387,7 @@ export default function SeasonalityPage() {
           </div>
         </>
       )}
+      </ReportSlide>
     </div>
   )
 }

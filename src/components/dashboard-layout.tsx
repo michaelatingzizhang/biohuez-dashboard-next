@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
@@ -31,8 +31,10 @@ import { DashboardFilters } from "@/components/dashboard-filters";
 import {
   ReportSlideSidebar,
   ReportSlideSorter,
-  useReportSlideDeck,
+  useReportSlideDeckWithPaging,
 } from "@/components/report-slide-deck";
+import { buildGlobalReportSlideId } from "@/lib/report-library";
+import { readSavedReportDeck } from "@/lib/report-deck-storage";
 
 const navItems = [
   { icon: Home, label: "Summary", href: "/", priority: 1, preview: "/page-previews/summary.png" },
@@ -50,6 +52,8 @@ const navItems = [
   { icon: Activity, label: "System Status", href: "/system-status", priority: 3, preview: "/page-previews/system-status.png" },
 ];
 
+const reportNavItems = navItems.filter((item) => item.priority <= 2)
+
 const pageSubtitles: Record<string, string> = {
   Summary: "Executive command view for sales, margin, inventory risk, and data freshness",
   Sales: "Revenue, units, ASP, AOV, sessions, conversion, and SKU trends",
@@ -64,6 +68,7 @@ const pageSubtitles: Record<string, string> = {
   "Impact Analysis": "Before and after readout for marketing actions, search updates, and listing artwork",
   Seasonality: "Seasonal demand, peak periods, weekly patterns, and trend comparisons",
   "System Status": "MotherDuck, Amazon SP-API, Ads API, sync freshness, and endpoint health",
+  "Report Builder": "Choose slides from across pages to create one executive report deck",
 };
 
 const DEFAULT_THEME = {
@@ -74,12 +79,19 @@ const DEFAULT_THEME = {
 };
 
 function getActiveNav(pathname: string) {
+  if (pathname === "/report-builder") return "Report Builder";
   if (pathname === "/") return "Summary";
   const item = navItems.find(nav => pathname === nav.href);
   return item?.label || "Summary";
 }
 
+function slideDeckCurrentId(pathname: string, slideKey: string | null) {
+  if (!slideKey) return ""
+  return buildGlobalReportSlideId(pathname, slideKey)
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,9 +103,88 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const activeIndex = Math.max(0, navItems.findIndex(item => item.label === activeNav));
   const previousItem = navItems[(activeIndex - 1 + navItems.length) % navItems.length];
   const nextItem = navItems[(activeIndex + 1) % navItems.length];
+  const activeReportIndex = reportNavItems.findIndex(item => item.label === activeNav);
+  const reportStepItems = activeReportIndex >= 0 ? reportNavItems : navItems;
+  const reportStepIndex = Math.max(0, reportStepItems.findIndex(item => item.label === activeNav));
+  const previousReportItem = reportStepItems[(reportStepIndex - 1 + reportStepItems.length) % reportStepItems.length];
+  const nextReportItem = reportStepItems[(reportStepIndex + 1) % reportStepItems.length];
   const previewItem = navItems.find(item => item.label === previewNav);
   const [reportMode, setReportMode] = useState(false);
-  const slideDeck = useReportSlideDeck(reportMode, pathname);
+  const [reportQuery, setReportQuery] = useState<{ reportDeck: string | null; reportSlide: string | null }>({
+    reportDeck: null,
+    reportSlide: null,
+  });
+  const requestedSlideKey = reportQuery.reportSlide;
+  const reportDeckMode = reportQuery.reportDeck;
+  const [savedDeck, setSavedDeck] = useState(readSavedReportDeck());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setSavedDeck(readSavedReportDeck());
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncQuery = () => {
+      const url = new URL(window.location.href);
+      setReportQuery({
+        reportDeck: url.searchParams.get("reportDeck"),
+        reportSlide: url.searchParams.get("reportSlide"),
+      });
+    };
+    syncQuery();
+    window.addEventListener("popstate", syncQuery);
+    window.addEventListener("focus", syncQuery);
+    return () => {
+      window.removeEventListener("popstate", syncQuery);
+      window.removeEventListener("focus", syncQuery);
+    };
+  }, [pathname]);
+
+  const currentGlobalSlideId = slideDeckCurrentId(pathname, requestedSlideKey);
+  const customDeckIndex = reportDeckMode === "custom"
+    ? savedDeck.findIndex((slide) => slide.id === currentGlobalSlideId)
+    : -1;
+  const customDeckCurrent = customDeckIndex >= 0 ? savedDeck[customDeckIndex] : null;
+
+  function goToPage(href: string, slideKey?: string | null, customDeck = false) {
+    const params = new URLSearchParams();
+    if (slideKey) params.set("reportSlide", slideKey);
+    if (customDeck) params.set("reportDeck", "custom");
+    const query = params.toString();
+    setReportQuery({
+      reportDeck: customDeck ? "custom" : null,
+      reportSlide: slideKey || null,
+    });
+    router.push(query ? `${href}?${query}` : href);
+  }
+
+  const slideDeck = useReportSlideDeckWithPaging(
+    reportMode,
+    pathname,
+    {
+      onPastEnd: () => {
+        if (reportDeckMode === "custom" && customDeckIndex >= 0 && customDeckIndex < savedDeck.length - 1) {
+          const nextSlide = savedDeck[customDeckIndex + 1];
+          goToPage(nextSlide.path, nextSlide.slideKey, true);
+          return;
+        }
+        goToPage(nextReportItem.href);
+      },
+      onPastStart: () => {
+        if (reportDeckMode === "custom" && customDeckIndex > 0) {
+          const prevSlide = savedDeck[customDeckIndex - 1];
+          goToPage(prevSlide.path, prevSlide.slideKey, true);
+          return;
+        }
+        goToPage(previousReportItem.href);
+      },
+    },
+    requestedSlideKey,
+  );
 
   function handleRefresh() {
     setRefreshing(true);
@@ -158,6 +249,25 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             controller={slideDeck}
             pageTitle={activeNav}
             pageSubtitle={pageSubtitles[activeNav] || ""}
+            pagePosition={reportDeckMode === "custom" && customDeckIndex >= 0 ? `Deck ${customDeckIndex + 1} of ${savedDeck.length}` : `Page ${reportStepIndex + 1} of ${reportStepItems.length}`}
+            deckLabel={reportDeckMode === "custom" && savedDeck.length ? `Custom Deck · ${savedDeck.length} slides` : "Build Big Report"}
+            onOpenBuilder={() => router.push("/report-builder")}
+            onPrevPage={() => {
+              if (reportDeckMode === "custom" && customDeckIndex > 0) {
+                const prevSlide = savedDeck[customDeckIndex - 1];
+                goToPage(prevSlide.path, prevSlide.slideKey, true);
+                return;
+              }
+              goToPage(previousReportItem.href);
+            }}
+            onNextPage={() => {
+              if (reportDeckMode === "custom" && customDeckIndex >= 0 && customDeckIndex < savedDeck.length - 1) {
+                const nextSlide = savedDeck[customDeckIndex + 1];
+                goToPage(nextSlide.path, nextSlide.slideKey, true);
+                return;
+              }
+              goToPage(nextReportItem.href);
+            }}
             onExit={toggleReportMode}
           />
         ) : (
@@ -297,8 +407,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           {reportMode && slideDeck.view === "slide" && slideDeck.slides.length === 0 ? (
             <div className="report-no-slides" data-testid="report-no-slides">
               <Presentation size={28} />
-              <strong>This page has no container slides yet</strong>
-              <p>Wrap each chart, metric block, or signal grid in <code>&lt;ReportSlide&gt;</code> to make it presentable in report mode.</p>
+              <strong>This page or active tab has no report slides yet</strong>
+              <p>Report mode only presents sections wrapped in <code>&lt;ReportSlide&gt;</code>. Try the page&apos;s main reporting tab, or move to the next priority page.</p>
             </div>
           ) : null}
         </main>

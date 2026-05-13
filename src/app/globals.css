@@ -215,6 +215,13 @@
     font-weight: 900;
   }
 
+  .commercial-report-sidebar-title em {
+    color: #869187;
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 760;
+  }
+
   .commercial-report-sidebar-title p {
     margin: 0;
     color: #6d786f;
@@ -248,6 +255,22 @@
   .commercial-report-view-toggle button.active {
     background: var(--biohuez-dark);
     color: white;
+  }
+
+  .commercial-report-builder-row {
+    padding: 10px 12px 0;
+  }
+
+  .commercial-report-builder-button {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid rgba(34, 44, 38, 0.1);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--biohuez-canvas) 42%, white);
+    color: var(--biohuez-dark);
+    font-size: 0.76rem;
+    font-weight: 850;
+    cursor: pointer;
   }
 
   .commercial-report-sidebar-status {
@@ -583,6 +606,17 @@
   .commercial-report-sidebar-footer .commercial-report-step:disabled {
     cursor: default;
     opacity: 0.42;
+  }
+
+  .commercial-report-page-jump {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+
+  .commercial-report-page-jump .commercial-report-step {
+    width: 100%;
   }
 
   .commercial-brand {

@@ -8,6 +8,7 @@ import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
+import { ReportSlide } from '@/components/report-slide'
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface AdsRow {
@@ -383,6 +384,13 @@ export default function CampaignPage() {
         </div>
 
         <TabsContent value="overview">
+          <ReportSlide
+            title="Campaign Overview"
+            message="This slide should show whether ad spend is producing efficient sales at the campaign level."
+            watch="Total spend, ad sales, ACOS, ROAS, and the daily spend versus sales relationship."
+            action="Use this slide to quickly judge whether paid traffic is working before diving into term-level detail."
+            order={1}
+          >
           <div className="dashboard-kpi-grid">
             <MetricCard label="Total Spend" value={fmtMoney(totalSpend)} />
             <MetricCard label="Ad Sales" value={fmtMoney(totalAdSales)} />
@@ -406,7 +414,15 @@ export default function CampaignPage() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          </ReportSlide>
 
+          <ReportSlide
+            title="Campaign Performance Detail"
+            message="This slide should show which campaigns are driving the spend and whether they deserve scaling or scrutiny."
+            watch="Spend, sales, orders, ACOS, ROAS, impressions, clicks, and CTR by campaign."
+            action="Use this slide to identify the campaigns that need scaling, fixing, or pausing."
+            order={2}
+          >
           <SectionHeader title="Campaign Performance" subtitle="Sorted by spend" />
           <div className="dashboard-table-card">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
@@ -436,6 +452,7 @@ export default function CampaignPage() {
               </tbody>
             </table>
           </div>
+          </ReportSlide>
         </TabsContent>
 
         <TabsContent value="terms">

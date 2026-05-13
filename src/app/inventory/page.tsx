@@ -6,6 +6,7 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
+import { ReportSlide } from '@/components/report-slide'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -371,11 +372,16 @@ export default function InventoryPage() {
 
   return (
       <div style={{ paddingBottom: 40 }}>
-      {/* KPI Ribbon */}
+      <ReportSlide
+        title="Inventory Executive Summary"
+        message="This slide should quickly show whether inventory coverage is healthy or whether stock and aging risks need action."
+        watch="Available units, days of supply, inbound inventory, critical SKUs, and aging exposure."
+        action="Use this slide to decide whether the inventory story is stockout risk, excess risk, or stable coverage."
+        order={1}
+      >
       <div className="dashboard-kpi-grid">
         <MetricCard label="Total Available" value={totalAvailable.toLocaleString()} sublabel="Units at FBA" />
-        <MetricCard label="Avg Days of Supply" value={`${avgDOS}d`} sublabel="Across all SKUs"
-          status={avgDOS < 30 ? 'alert' : avgDOS < 60 ? 'warn' : 'normal'} />
+        <MetricCard label="Avg Days of Supply" value={`${avgDOS}d`} sublabel="Across all SKUs" status={avgDOS < 30 ? 'alert' : avgDOS < 60 ? 'warn' : 'normal'} />
         <MetricCard label="Inbound Units" value={totalInbound.toLocaleString()} sublabel="En route to FBA" />
         <MetricCard label="Est. Storage Cost" value={`$${totalStorageCost.toFixed(0)}`} sublabel="Next month" />
       </div>
@@ -503,8 +509,15 @@ export default function InventoryPage() {
           </div>
         </div>
       </div>
+      </ReportSlide>
 
-      {/* SKU Coverage Cards */}
+      <ReportSlide
+        title="Inventory Coverage And Aging"
+        message="This slide should show how protected each SKU is and where aging inventory is starting to become a drag."
+        watch="Coverage by SKU, velocity, weeks of cover, and old inventory buckets."
+        action="Use this slide to prioritize restocks, cleanups, and slow-moving SKUs."
+        order={2}
+      >
       <SectionHeader title="Inventory Coverage by SKU" subtitle="Days of supply, velocity, and health status" />
       <div className="dashboard-card-grid">
         {planning.map(r => {
@@ -672,8 +685,15 @@ export default function InventoryPage() {
           </>
         )}
       </div>
+      </ReportSlide>
 
-      {/* Inventory Movement History */}
+      <ReportSlide
+        title="Inventory Flow And Placement"
+        message="This slide should explain where inventory is sitting and how it is moving through the network."
+        watch="Ledger movement history, FC concentration, and recent receipt events."
+        action="Use this slide when the discussion turns to operational execution instead of just stock level risk."
+        order={3}
+      >
       <SectionHeader title="Inventory Movement History" subtitle="Monthly balance changes by SKU (FBA sellable)" />
       <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20 }}>
         {ledgerTrend.length === 0 ? (
@@ -816,6 +836,7 @@ export default function InventoryPage() {
           </table>
         )}
       </div>
+      </ReportSlide>
     </div>
   )
 }

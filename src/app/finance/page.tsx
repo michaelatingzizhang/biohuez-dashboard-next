@@ -6,6 +6,7 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { DataState } from '@/components/data-state'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   BarChart, Bar, LineChart, Line,
@@ -229,79 +230,74 @@ export default function FinancePage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Finance</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Settlement P&L, fee load, and net revenue trends (3-month avg)</p>
 
-      <div className="dashboard-kpi-grid">
-        <MetricCard label="Avg Gross Sales" value={fmtMoney(avgGrossSales)} sublabel="Last 3 months" />
-        <MetricCard label="Avg Net Revenue" value={fmtMoney(avgNetRevenue)} sublabel="Last 3 months" />
-        <MetricCard label="Avg Net After Fees" value={fmtMoney(avgGrossProfit)} sublabel="COGS not included" />
-        <MetricCard
-          label="Avg Fee-Adjusted Margin"
-          value={fmtPct(avgMargin)}
-          sublabel="Before COGS"
-          status={avgMargin >= 20 ? 'normal' : avgMargin >= 10 ? 'warn' : 'alert'}
-        />
-      </div>
+      <ReportSlide
+        title="Finance Executive Summary"
+        message="This slide should quickly explain whether sales are turning into healthy contribution margin after Amazon fees."
+        watch="Gross sales, net after fees, fee-adjusted margin, and the latest pressure signals."
+        action="Use this slide to decide whether margin quality is improving or being squeezed."
+        order={1}
+      >
+        <div className="dashboard-kpi-grid">
+          <MetricCard label="Avg Gross Sales" value={fmtMoney(avgGrossSales)} sublabel="Last 3 months" />
+          <MetricCard label="Avg Net Revenue" value={fmtMoney(avgNetRevenue)} sublabel="Last 3 months" />
+          <MetricCard label="Avg Net After Fees" value={fmtMoney(avgGrossProfit)} sublabel="COGS not included" />
+          <MetricCard
+            label="Avg Fee-Adjusted Margin"
+            value={fmtPct(avgMargin)}
+            sublabel="Before COGS"
+            status={avgMargin >= 20 ? 'normal' : avgMargin >= 10 ? 'warn' : 'alert'}
+          />
+        </div>
 
-      <SectionHeader title="Monthly P&L Breakdown" subtitle="Gross sales vs Amazon fees, FBA fees, and net after fees" />
-      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'k'} />
-            <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
-            <Legend />
-            <Bar dataKey="gross_sales" fill="#B8D4AE" name="Gross Sales" />
-            <Bar dataKey="amazon_fees" fill="#E67E22" name="Amazon Fees" />
-            <Bar dataKey="fba_fees" fill="#C0392B" name="FBA Fees" />
-            <Bar dataKey="net_profit" fill="#2D4A27" name="Net After Fees" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+        <SectionHeader title="Monthly P&L Breakdown" subtitle="Gross sales vs Amazon fees, FBA fees, and net after fees" />
+        <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '$' + (v/1000).toFixed(0) + 'k'} />
+              <Tooltip formatter={(value: unknown) => fmtMoney(Number(value))} />
+              <Legend />
+              <Bar dataKey="gross_sales" fill="#B8D4AE" name="Gross Sales" />
+              <Bar dataKey="amazon_fees" fill="#E67E22" name="Amazon Fees" />
+              <Bar dataKey="fba_fees" fill="#C0392B" name="FBA Fees" />
+              <Bar dataKey="net_profit" fill="#2D4A27" name="Net After Fees" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
 
-      <SectionHeader title="Fee-Adjusted Margin Trend" subtitle="Net after fees as a percentage of gross sales" />
-      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} domain={['auto', 'auto']} />
-            <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
-            <Legend />
-            <Line type="monotone" dataKey="margin_pct" stroke="#2D4A27" strokeWidth={2.5} dot name="Fee-Adjusted Margin %" connectNulls />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+        <SectionHeader title="Fee-Adjusted Margin Trend" subtitle="Net after fees as a percentage of gross sales" />
+        <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} domain={['auto', 'auto']} />
+              <Tooltip formatter={(value: unknown) => Number(value).toFixed(1) + '%'} />
+              <Legend />
+              <Line type="monotone" dataKey="margin_pct" stroke="#2D4A27" strokeWidth={2.5} dot name="Fee-Adjusted Margin %" connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
 
-      <SectionHeader title="Finance Intelligence" subtitle="Margin pressure, fee drag, refund impact, and month-over-month changes" />
-      <div className="dashboard-kpi-grid">
-        <MetricCard
-          label="Latest Margin"
-          value={fmtPct(insights.summary.latest_margin_pct)}
-          sublabel={insights.summary.latest_month || 'Latest month'}
-          status={(insights.summary.latest_margin_pct ?? 0) < 35 ? 'alert' : (insights.summary.latest_margin_pct ?? 0) < 50 ? 'warn' : 'normal'}
-        />
-        <MetricCard
-          label="Fee Load"
-          value={fmtPct(insights.summary.latest_fee_load_pct)}
-          sublabel="Amazon + FBA / sales"
-          status={(insights.summary.latest_fee_load_pct ?? 0) > 45 ? 'alert' : (insights.summary.latest_fee_load_pct ?? 0) > 35 ? 'warn' : 'normal'}
-        />
-        <MetricCard
-          label="Refund Rate"
-          value={fmtPct(insights.summary.latest_refund_rate_pct)}
-          sublabel="Refunds / sales"
-          status={(insights.summary.latest_refund_rate_pct ?? 0) > 10 ? 'alert' : (insights.summary.latest_refund_rate_pct ?? 0) > 5 ? 'warn' : 'normal'}
-        />
-        <MetricCard
-          label="Ad-Adjusted Margin"
-          value={fmtPct(insights.summary.latest_ad_adjusted_margin_pct)}
-          sublabel="Before COGS"
-          status={(insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 20 ? 'alert' : (insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 35 ? 'warn' : 'normal'}
-        />
-      </div>
+        <SectionHeader title="Finance Intelligence" subtitle="Margin pressure, fee drag, refund impact, and month-over-month changes" />
+        <div className="dashboard-kpi-grid">
+          <MetricCard label="Latest Margin" value={fmtPct(insights.summary.latest_margin_pct)} sublabel={insights.summary.latest_month || 'Latest month'} status={(insights.summary.latest_margin_pct ?? 0) < 35 ? 'alert' : (insights.summary.latest_margin_pct ?? 0) < 50 ? 'warn' : 'normal'} />
+          <MetricCard label="Fee Load" value={fmtPct(insights.summary.latest_fee_load_pct)} sublabel="Amazon + FBA / sales" status={(insights.summary.latest_fee_load_pct ?? 0) > 45 ? 'alert' : (insights.summary.latest_fee_load_pct ?? 0) > 35 ? 'warn' : 'normal'} />
+          <MetricCard label="Refund Rate" value={fmtPct(insights.summary.latest_refund_rate_pct)} sublabel="Refunds / sales" status={(insights.summary.latest_refund_rate_pct ?? 0) > 10 ? 'alert' : (insights.summary.latest_refund_rate_pct ?? 0) > 5 ? 'warn' : 'normal'} />
+          <MetricCard label="Ad-Adjusted Margin" value={fmtPct(insights.summary.latest_ad_adjusted_margin_pct)} sublabel="Before COGS" status={(insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 20 ? 'alert' : (insights.summary.latest_ad_adjusted_margin_pct ?? 0) < 35 ? 'warn' : 'normal'} />
+        </div>
 
-      <SignalGrid signals={insights.signals} limit={6} />
+        <SignalGrid signals={insights.signals} limit={6} />
+      </ReportSlide>
 
+      <ReportSlide
+        title="Finance Drivers"
+        message="This slide should explain what is actually pushing margin up or down in the latest period."
+        watch="Per-unit economics, latest month drivers, cost drag, and margin pressure trends."
+        action="Use this slide to isolate the levers behind fee pressure, refund drag, or ad burden."
+        order={2}
+      >
       {displayPL.length > 0 && (
         <>
           <SectionHeader title="Calendar P&L" subtitle="Streamlit-matched monthly bridge from target gross sales to contribution margin" />
@@ -485,7 +481,15 @@ export default function FinancePage() {
           </div>
         </>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Finance Detail Tables"
+        message="This slide should serve as the detailed appendix for monthly P&L and settlement-level finance records."
+        watch="Monthly rollups, settlement summaries, and transfer values."
+        action="Use this slide when someone wants the exact line items behind the headline metrics."
+        order={3}
+      >
       <SectionHeader title="Monthly P&L Table" />
       <div className="dashboard-table-card">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
@@ -600,6 +604,7 @@ export default function FinancePage() {
           })()}
         </div>
       )}
+      </ReportSlide>
     </div>
   )
 }

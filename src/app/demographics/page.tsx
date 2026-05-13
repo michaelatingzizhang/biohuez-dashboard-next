@@ -6,6 +6,7 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 import { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface RepeatWeeklyRow {
@@ -248,7 +249,7 @@ export default function DemographicsPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Demographics</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Brand Analytics repeat purchase data</p>
 
-      <Tabs defaultValue="repeat">
+      <Tabs defaultValue="intelligence">
         <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
           <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
           <TabsTrigger value="profiles">Streamlit Profiles</TabsTrigger>
@@ -257,6 +258,13 @@ export default function DemographicsPage() {
         </TabsList>
 
         <TabsContent value="intelligence">
+          <ReportSlide
+            title="Demographics Executive Summary"
+            message="This slide should show whether repeat behavior and customer mix are improving or weakening."
+            watch="Repeat rate, repeat-rate delta, unique customers, repeat revenue, and signal-level retention health."
+            action="Use this slide to frame whether customer quality is compounding or flattening."
+            order={1}
+          >
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
             <MetricCard
               label="Repeat Rate"
@@ -300,7 +308,15 @@ export default function DemographicsPage() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          </ReportSlide>
 
+          <ReportSlide
+            title="Demographics Segment Detail"
+            message="This slide should explain which ASINs or segments are shifting and where the repeat-quality story is strongest or weakest."
+            watch="ASIN repeat health and the largest recent demographic segment shifts."
+            action="Use this slide to connect retention changes to actual customer or product mix movement."
+            order={2}
+          >
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
             <div>
               <SectionHeader title="ASIN Repeat Health" subtitle="Sorted by average repeat rate" />
@@ -353,6 +369,7 @@ export default function DemographicsPage() {
               </div>
             </div>
           </div>
+          </ReportSlide>
         </TabsContent>
 
         <TabsContent value="profiles">

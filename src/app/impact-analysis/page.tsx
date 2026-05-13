@@ -7,6 +7,7 @@ import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
+import { ReportSlide } from '@/components/report-slide'
 
 interface ActionRow {
   phase: string
@@ -181,24 +182,31 @@ export default function ImpactAnalysisPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Impact Analysis</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Marketing action timeline, before/after deltas, ads impact, BSR movement, and audience shifts</p>
 
-      <SectionHeader title="Marketing Timeline" subtitle="Legacy Streamlit action windows migrated into the new dashboard" />
-      <div className="dashboard-chart-grid" style={{ marginBottom: 18 }}>
-        {data.actions.map(action => (
-          <div key={action.phase} className="dashboard-card" style={{ borderTop: `4px solid ${phaseColors[action.phase] || '#6B8F61'}` }}>
-            <div style={{ fontSize: '0.72rem', color: '#6B7280', textTransform: 'uppercase', fontWeight: 700 }}>{shortDate(action.start)} - {shortDate(action.end)}</div>
-            <div style={{ fontWeight: 800, color: '#111827', marginTop: 6 }}>{action.label}</div>
-            <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: phaseColors[action.phase] || '#6B8F61' }} />
-          </div>
-        ))}
-      </div>
+      <ReportSlide
+        title="Impact Overview"
+        message="This slide should summarize what happened after each major marketing or listing change."
+        watch="Action timeline, latest revenue/orders/CVR deltas, and the strongest automated takeaways."
+        action="Use this slide to set the narrative before diving into before-and-after detail."
+        order={1}
+      >
+        <SectionHeader title="Marketing Timeline" subtitle="Legacy Streamlit action windows migrated into the new dashboard" />
+        <div className="dashboard-chart-grid" style={{ marginBottom: 18 }}>
+          {data.actions.map(action => (
+            <div key={action.phase} className="dashboard-card" style={{ borderTop: `4px solid ${phaseColors[action.phase] || '#6B8F61'}` }}>
+              <div style={{ fontSize: '0.72rem', color: '#6B7280', textTransform: 'uppercase', fontWeight: 700 }}>{shortDate(action.start)} - {shortDate(action.end)}</div>
+              <div style={{ fontWeight: 800, color: '#111827', marginTop: 6 }}>{action.label}</div>
+              <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: phaseColors[action.phase] || '#6B8F61' }} />
+            </div>
+          ))}
+        </div>
 
-      <div className="dashboard-kpi-grid">
-        <MetricCard label="Latest Revenue Delta" value={fmtPct(latestPhase?.revenue_delta_pct)} sublabel={latestPhase?.label || 'Latest phase'} status={(latestPhase?.revenue_delta_pct ?? 0) < 0 ? 'warn' : 'normal'} />
-        <MetricCard label="Latest Orders Delta" value={fmtPct(latestPhase?.orders_delta_pct)} sublabel="vs prior phase" status={(latestPhase?.orders_delta_pct ?? 0) < 0 ? 'warn' : 'normal'} />
-        <MetricCard label="CVR Delta" value={fmtPct(latestPhase?.cvr_delta_pp, ' pp')} sublabel="percentage-point movement" status={(latestPhase?.cvr_delta_pp ?? 0) < 0 ? 'warn' : 'normal'} />
-        <MetricCard label="SP ROAS" value={latestAdsPhase?.roas == null ? '-' : latestAdsPhase.roas.toFixed(2) + 'x'} sublabel={latestAdsPhase?.label || 'Latest phase'} status={(latestAdsPhase?.roas ?? 0) < 1 ? 'warn' : 'normal'} />
-        <MetricCard label="Female Share" value={femaleShare?.latest == null ? '-' : femaleShare.latest.toFixed(1) + '%'} sublabel={femaleShare?.delta_pp == null ? 'Audience mix' : `${fmtPct(femaleShare.delta_pp, ' pp')} over period`} />
-      </div>
+        <div className="dashboard-kpi-grid">
+          <MetricCard label="Latest Revenue Delta" value={fmtPct(latestPhase?.revenue_delta_pct)} sublabel={latestPhase?.label || 'Latest phase'} status={(latestPhase?.revenue_delta_pct ?? 0) < 0 ? 'warn' : 'normal'} />
+          <MetricCard label="Latest Orders Delta" value={fmtPct(latestPhase?.orders_delta_pct)} sublabel="vs prior phase" status={(latestPhase?.orders_delta_pct ?? 0) < 0 ? 'warn' : 'normal'} />
+          <MetricCard label="CVR Delta" value={fmtPct(latestPhase?.cvr_delta_pp, ' pp')} sublabel="percentage-point movement" status={(latestPhase?.cvr_delta_pp ?? 0) < 0 ? 'warn' : 'normal'} />
+          <MetricCard label="SP ROAS" value={latestAdsPhase?.roas == null ? '-' : latestAdsPhase.roas.toFixed(2) + 'x'} sublabel={latestAdsPhase?.label || 'Latest phase'} status={(latestAdsPhase?.roas ?? 0) < 1 ? 'warn' : 'normal'} />
+          <MetricCard label="Female Share" value={femaleShare?.latest == null ? '-' : femaleShare.latest.toFixed(1) + '%'} sublabel={femaleShare?.delta_pp == null ? 'Audience mix' : `${fmtPct(femaleShare.delta_pp, ' pp')} over period`} />
+        </div>
 
       {data.takeaways.length > 0 && (
         <>
@@ -206,7 +214,15 @@ export default function ImpactAnalysisPage() {
           <SignalGrid signals={data.takeaways} />
         </>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Impact Before And After"
+        message="This slide should show the before-and-after movement in sales and traffic after the selected actions."
+        watch="Revenue trend, traffic trend, conversion, buy box, and phase-level deltas."
+        action="Use this slide to judge whether the changes actually improved commercial performance."
+        order={2}
+      >
       <SectionHeader title="Revenue & Traffic Trends" subtitle="Weekly revenue, sessions, conversion, and buy box view with action dates above" />
       <div className="dashboard-card" style={{ height: 360, marginBottom: 18 }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -257,7 +273,15 @@ export default function ImpactAnalysisPage() {
           </tbody>
         </table>
       </div>
+      </ReportSlide>
 
+      <ReportSlide
+        title="Impact Support Modules"
+        message="This slide should show the supporting evidence from ads, BSR, and search-term shifts."
+        watch="SP spend and ROAS, BSR movement, cluster visibility, and before/after search terms."
+        action="Use this slide to connect performance changes back to the likely operational drivers."
+        order={3}
+      >
       <div className="dashboard-chart-grid">
         <div className="dashboard-card" style={{ height: 330 }}>
           <SectionHeader title="SP Spend & ROAS" subtitle="Weekly sponsored products spend with ROAS overlay" />
@@ -338,6 +362,7 @@ export default function ImpactAnalysisPage() {
         <SearchTermsTable title="Before Search Change" rows={data.search.top_before} />
         <SearchTermsTable title="After Search Change" rows={data.search.top_after} />
       </div>
+      </ReportSlide>
     </div>
   )
 }

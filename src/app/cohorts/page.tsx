@@ -5,6 +5,7 @@ import { DataState } from '@/components/data-state'
 import { useEffect, useState } from 'react'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
+import { ReportSlide } from '@/components/report-slide'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface CohortRow {
@@ -96,27 +97,23 @@ export default function CohortsPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Cohorts</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Customer retention analysis by cohort month</p>
 
-      {/* Note about proxy */}
-      <div style={{ background: '#FFF8E1', border: '1px solid #E67E22', borderRadius: 8, padding: 12, marginBottom: 20, color: '#8B5E00', fontSize: '0.8rem' }}>
-        Note: Amazon does not expose buyer email/ID in order exports. Cohorts are built from order counts by first-purchase month as a proxy for customer cohorts.
-      </div>
+      <ReportSlide
+        title="Cohort Retention"
+        message="This slide should show whether recent buyer cohorts are coming back over the following months."
+        watch="Average M1 and M3 retention plus the cohort heatmap shape."
+        action="Use this slide to talk about customer quality and retention rather than one-time sales."
+        order={1}
+      >
+        <div style={{ background: '#FFF8E1', border: '1px solid #E67E22', borderRadius: 8, padding: 12, marginBottom: 20, color: '#8B5E00', fontSize: '0.8rem' }}>
+          Note: Amazon does not expose buyer email/ID in order exports. Cohorts are built from order counts by first-purchase month as a proxy for customer cohorts.
+        </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        <MetricCard label="Total Orders" value={total_orders.toLocaleString()} sublabel="Proxy for unique customers" />
-        <MetricCard
-          label="Avg M1 Retention"
-          value={avgM1 !== null ? avgM1.toFixed(1) + '%' : 'N/A'}
-          sublabel="Orders returning month 2"
-        />
-        <MetricCard
-          label="Avg M3 Retention"
-          value={avgM3 !== null ? avgM3.toFixed(1) + '%' : 'N/A'}
-          sublabel="Orders returning month 4"
-        />
-      </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+          <MetricCard label="Total Orders" value={total_orders.toLocaleString()} sublabel="Proxy for unique customers" />
+          <MetricCard label="Avg M1 Retention" value={avgM1 !== null ? avgM1.toFixed(1) + '%' : 'N/A'} sublabel="Orders returning month 2" />
+          <MetricCard label="Avg M3 Retention" value={avgM3 !== null ? avgM3.toFixed(1) + '%' : 'N/A'} sublabel="Orders returning month 4" />
+        </div>
 
-      {/* Cohort heatmap */}
       {sortedCohorts.length > 0 && (
         <>
           <SectionHeader title="Cohort Retention Heatmap" subtitle="% of M0 orders remaining in each subsequent month" />
@@ -162,20 +159,28 @@ export default function CohortsPage() {
           </div>
         </>
       )}
+      </ReportSlide>
 
-      {/* Cohort size chart */}
-      <SectionHeader title="Cohort Size Over Time" subtitle="Number of orders in each cohort (M0)" />
-      <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={sortedSizes}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
-            <XAxis dataKey="cohort_month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Bar dataKey="m0_count" fill="#2D4A27" name="Orders (M0)" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <ReportSlide
+        title="Cohort Size Trend"
+        message="This slide should show whether incoming cohorts are getting bigger or smaller over time."
+        watch="Cohort entry size and any obvious drop-offs in acquisition volume."
+        action="Use this slide to separate retention quality from acquisition scale."
+        order={2}
+      >
+        <SectionHeader title="Cohort Size Over Time" subtitle="Number of orders in each cohort (M0)" />
+        <div style={{ background: 'white', borderRadius: 10, padding: 16 }}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={sortedSizes}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#EBEBEB" vertical={false} />
+              <XAxis dataKey="cohort_month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="m0_count" fill="#2D4A27" name="Orders (M0)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </ReportSlide>
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, hasActiveDashboardFilters, useDashboardFilters } from '@/components/dashboard-filters'
+import { ReportSlide } from '@/components/report-slide'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 const SKU_COLORS: Record<string, string> = {
@@ -176,7 +177,13 @@ export default function ReturnsPage() {
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Returns</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>FBA customer returns analysis</p>
 
-      {/* KPI Ribbon */}
+      <ReportSlide
+        title="Returns Executive Summary"
+        message="This slide should quickly show the size of the returns problem and whether it is getting worse."
+        watch="Total returns, return rate, refund impact, 30-day change, and the top return reason."
+        action="Use this slide to frame returns as either stable noise or a real margin risk."
+        order={1}
+      >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
         <MetricCard label="Total Returns" value={fmtNum(insights.summary.total_returns || totalReturns)} sublabel={`${returns.length} return events`} />
         <MetricCard label="Return Rate" value={fmtPct(insights.summary.overall_return_rate_pct ?? returnRate)} sublabel={`vs ${fmtNum(insights.summary.total_units_sold || totalUnitsSold)} units sold`} status={(insights.summary.overall_return_rate_pct ?? returnRate) > 5 ? 'alert' : (insights.summary.overall_return_rate_pct ?? returnRate) > 2 ? 'warn' : 'normal'} />
@@ -226,7 +233,15 @@ export default function ReturnsPage() {
           </div>
         </div>
       )}
+      </ReportSlide>
 
+      <ReportSlide
+        title="Returns Drivers"
+        message="This slide should show which SKUs and issue clusters are driving the returns problem."
+        watch="SKU risk scores, grouped reason clusters, and the monthly trend in return volume."
+        action="Use this slide to decide whether the response should focus on product quality, listing clarity, or customer fit."
+        order={2}
+      >
       {insights.sku_risks.length > 0 && (
         <>
           <SectionHeader title="SKU Return Risk" subtitle="Return rate, refund impact, reason pattern, and risk score" />
@@ -315,8 +330,15 @@ export default function ReturnsPage() {
           </div>
         </>
       )}
+      </ReportSlide>
 
-      {/* Returns over time */}
+      <ReportSlide
+        title="Returns Detail"
+        message="This slide should provide the detailed appendix for return timing, reasons, and the raw return log."
+        watch="Time series by SKU, top return reasons, per-SKU breakdown, and recent return events."
+        action="Use this slide when you need the operational detail behind the headline returns story."
+        order={3}
+      >
       {tsChartData.length > 0 && (
         <>
           <SectionHeader title="Returns Over Time" subtitle="By SKU" />
@@ -431,6 +453,7 @@ export default function ReturnsPage() {
           </tbody>
         </table>
       </div>
+      </ReportSlide>
     </div>
   )
 }
