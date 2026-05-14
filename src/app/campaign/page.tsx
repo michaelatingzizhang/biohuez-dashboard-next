@@ -253,6 +253,17 @@ function fmtInt(n: number | null | undefined) {
   return Number(n).toLocaleString()
 }
 
+function bucketCampaignDate(dateValue: string, granularity: string) {
+  if (!dateValue) return dateValue
+  if (granularity !== 'weekly') return dateValue
+  const date = new Date(`${dateValue}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return dateValue
+  const day = date.getDay()
+  const offset = day === 0 ? -6 : 1 - day
+  date.setDate(date.getDate() + offset)
+  return date.toISOString().slice(0, 10)
+}
+
 function campaignStudioMetric(
   key: string,
   label: string,
@@ -354,7 +365,7 @@ export default function CampaignPage() {
 
   const dailyMap: Record<string, { spend: number; sales: number }> = {}
   for (const row of ads) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketCampaignDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!dailyMap[d]) dailyMap[d] = { spend: 0, sales: 0 }
     dailyMap[d].spend += row.spend || 0
     dailyMap[d].sales += row.sales_1d || 0

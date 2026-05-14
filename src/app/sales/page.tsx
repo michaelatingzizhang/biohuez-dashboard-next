@@ -368,6 +368,11 @@ function weekStart(dateValue: string) {
   return isoDate(addDays(date, offset))
 }
 
+function bucketDate(dateValue: string, granularity: string) {
+  if (!dateValue) return dateValue
+  return granularity === 'weekly' ? weekStart(dateValue) : dateValue
+}
+
 function formatChartDate(value: unknown) {
   const raw = String(value || '')
   const [, month, day] = raw.match(/^\d{4}-(\d{2})-(\d{2})/) || []
@@ -399,7 +404,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
   const skuSet = new Set<string>()
   for (const row of sales) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const d = bucketDate(rawDate, granularity)
     if (!d) continue
     if (!dateSkuMap[d]) dateSkuMap[d] = {}
     dateSkuMap[d][row.sku] = (dateSkuMap[d][row.sku] || 0) + (row.revenue || 0)
@@ -409,7 +414,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
   const adSpendByDate: Record<string, number> = {}
   for (const row of ads) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const d = bucketDate(rawDate, granularity)
     if (!d) continue
     adSpendByDate[d] = (adSpendByDate[d] || 0) + (row.spend || 0)
   }
@@ -417,7 +422,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
   const adSpendTypeByDate: Record<string, Record<string, number>> = {}
   for (const row of adsByType) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const d = bucketDate(rawDate, granularity)
     if (!d) continue
     const type = normalizeAdType(row.ad_type)
     if (!adSpendTypeByDate[d]) adSpendTypeByDate[d] = {}
@@ -427,7 +432,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
   const aspByDate: Record<string, { revenue: number; units: number }> = {}
   for (const row of sales) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const d = bucketDate(rawDate, granularity)
     if (!d) continue
     if (!aspByDate[d]) aspByDate[d] = { revenue: 0, units: 0 }
     aspByDate[d].revenue += row.revenue || 0
@@ -437,7 +442,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
   const bestBsrByDate: Record<string, number> = {}
   for (const row of bsr) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const d = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const d = bucketDate(rawDate, granularity)
     if (!d) continue
     bestBsrByDate[d] = bestBsrByDate[d] ? Math.min(bestBsrByDate[d], row.rank) : row.rank
   }
@@ -447,7 +452,7 @@ function buildOverviewChart(sales: SalesRow[], ads: AdsRow[], bsr: BsrRow[], ads
     .map(([date, skuRevs]) => {
       const aspInput = aspByDate[date]
       const units = sales
-        .filter(row => (granularity === 'weekly' ? weekStart(row.date?.slice(0, 10) || '') : row.date?.slice(0, 10)) === date)
+        .filter(row => bucketDate(row.date?.slice(0, 10) || '', granularity) === date)
         .reduce((sum, row) => sum + (row.units || 0), 0)
       return {
         date,
@@ -469,7 +474,7 @@ function buildSkuTimeSeries(sales: SalesRow[], granularity = 'daily') {
   const skuSet = new Set<string>()
   for (const row of sales) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const date = bucketDate(rawDate, granularity)
     const sku = row.sku || 'Unknown'
     if (!date) continue
     if (!bucketMap[date]) bucketMap[date] = {}
@@ -505,7 +510,7 @@ function buildTrafficSeries(sales: SalesRow[], ads: AdsRow[], granularity = 'dai
   const buckets: Record<string, { sessions: number; units: number; revenue: number; adSpend: number; clicks: number }> = {}
   for (const row of sales) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const date = bucketDate(rawDate, granularity)
     if (!date) continue
     if (!buckets[date]) buckets[date] = { sessions: 0, units: 0, revenue: 0, adSpend: 0, clicks: 0 }
     buckets[date].sessions += row.sessions || 0
@@ -514,7 +519,7 @@ function buildTrafficSeries(sales: SalesRow[], ads: AdsRow[], granularity = 'dai
   }
   for (const row of ads) {
     const rawDate = row.date?.slice(0, 10) || ''
-    const date = granularity === 'weekly' ? weekStart(rawDate) : rawDate
+    const date = bucketDate(rawDate, granularity)
     if (!date) continue
     if (!buckets[date]) buckets[date] = { sessions: 0, units: 0, revenue: 0, adSpend: 0, clicks: 0 }
     buckets[date].adSpend += row.spend || 0
@@ -729,10 +734,10 @@ export default function SalesPage() {
   const bsrAsinSet = new Set<string>()
   const bsrDateMap: Record<string, Record<string, number>> = {}
   for (const row of bsr) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!bsrDateMap[d]) bsrDateMap[d] = {}
     const key = `${row.sku_name || row.asin}`
-    bsrDateMap[d][key] = row.rank
+    bsrDateMap[d][key] = bsrDateMap[d][key] ? Math.min(bsrDateMap[d][key], row.rank) : row.rank
     bsrAsinSet.add(key)
   }
   const bsrAsins = Array.from(bsrAsinSet)
@@ -744,7 +749,7 @@ export default function SalesPage() {
   const adTypeMap: Record<string, Record<string, number>> = {}
   const adTypes = new Set<string>()
   for (const row of ads_by_type) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!adTypeMap[d]) adTypeMap[d] = {}
     adTypeMap[d][row.ad_type] = (adTypeMap[d][row.ad_type] || 0) + (row.spend || 0)
     adTypes.add(row.ad_type)
@@ -754,7 +759,7 @@ export default function SalesPage() {
     .map(([date, types]) => ({ date, ...types }))
   const dailyAdMap: Record<string, { spend: number; sales: number }> = {}
   for (const row of ads) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!dailyAdMap[d]) dailyAdMap[d] = { spend: 0, sales: 0 }
     dailyAdMap[d].spend += row.spend || 0
     dailyAdMap[d].sales += row.sales_1d || 0
@@ -772,7 +777,7 @@ export default function SalesPage() {
     totalRevenue: number; totalUnits: number; totalOrders: number;
   }> = {}
   for (const row of ads) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0, totalOrders: 0 }
     unitEconByDate[d].adSales += row.sales_1d || 0
     unitEconByDate[d].adUnits += row.purchases_1d || 0
@@ -780,7 +785,7 @@ export default function SalesPage() {
     unitEconByDate[d].adOrders += row.purchases_1d || 0
   }
   for (const row of sales) {
-    const d = row.date?.slice(0, 10) || ''
+    const d = bucketDate(row.date?.slice(0, 10) || '', filters.granularity)
     if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0, totalOrders: 0 }
     unitEconByDate[d].totalRevenue += row.revenue || 0
     unitEconByDate[d].totalUnits += row.units || 0

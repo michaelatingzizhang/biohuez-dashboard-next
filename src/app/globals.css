@@ -1817,6 +1817,125 @@
     gap: 14px;
   }
 
+  .sales-chart-builder-layout {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .sales-chart-builder-browser,
+  .sales-chart-builder-fields {
+    display: grid;
+    gap: 10px;
+  }
+
+  .sales-chart-dataset-list,
+  .sales-chart-field-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .sales-chart-dataset-item {
+    display: grid;
+    gap: 4px;
+    text-align: left;
+    padding: 12px;
+    border: 1px solid rgba(34, 44, 38, 0.1);
+    border-radius: 12px;
+    background: #f7faf5;
+    color: #17201b;
+    cursor: pointer;
+  }
+
+  .sales-chart-dataset-item.is-active {
+    border-color: color-mix(in srgb, var(--biohuez-dark) 48%, transparent);
+    background: color-mix(in srgb, var(--biohuez-canvas) 54%, white);
+    box-shadow: inset 3px 0 0 var(--biohuez-dark);
+  }
+
+  .sales-chart-dataset-item strong,
+  .sales-chart-builder-field-header strong,
+  .sales-chart-field-meta strong {
+    color: #17201b;
+    font-size: 0.84rem;
+    font-weight: 850;
+  }
+
+  .sales-chart-dataset-item small,
+  .sales-chart-builder-field-header p,
+  .sales-chart-field-meta small {
+    color: #69756c;
+    font-size: 0.74rem;
+    line-height: 1.35;
+  }
+
+  .sales-chart-dataset-item em {
+    color: #556356;
+    font-size: 0.68rem;
+    font-style: normal;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .sales-chart-builder-field-header {
+    display: grid;
+    gap: 10px;
+  }
+
+  .sales-chart-field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(34, 44, 38, 0.1);
+    border-radius: 12px;
+    background: #fbfcfa;
+  }
+
+  .sales-chart-field-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .sales-chart-field-meta i {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .sales-chart-field-actions {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .sales-chart-field-actions button {
+    min-height: 30px;
+    border: 1px solid rgba(34, 44, 38, 0.12);
+    border-radius: 999px;
+    background: #f5f7f2;
+    color: #506050;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 0 10px;
+    cursor: pointer;
+  }
+
+  .sales-chart-field-actions button.is-active {
+    background: var(--biohuez-dark);
+    color: white;
+  }
+
+  .sales-chart-field-actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .sales-chart-builder-form label {
     display: grid;
     gap: 6px;
@@ -1868,6 +1987,12 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  @media (max-width: 900px) {
+    .sales-chart-builder-layout {
+      grid-template-columns: 1fr;
+    }
   }
 
 

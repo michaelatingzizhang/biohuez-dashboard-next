@@ -2,6 +2,23 @@
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react"
 import { REPORT_PRIORITY_PAGES, buildCustomModuleSlideKey, buildGlobalReportSlideId, isCustomModuleSlideKey } from "@/lib/report-library"
 import { readChartStudioModules } from "@/components/sales-chart-studio"
@@ -31,6 +48,10 @@ export default function ReportBuilderPage() {
   const [presets, setPresets] = useState<SavedReportDeckPreset[]>([])
   const [presetName, setPresetName] = useState("")
   const [saved, setSaved] = useState(false)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   useEffect(() => {
     setSelectedSlides(readSavedReportDeck())
@@ -79,6 +100,18 @@ export default function ReportBuilderPage() {
       const [item] = next.splice(index, 1)
       next.splice(nextIndex, 0, item)
       return next
+    })
+  }
+
+  function handleSelectedDeckDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setSaved(false)
+    setSelectedSlides((current) => {
+      const oldIndex = current.findIndex((slide) => slide.id === active.id)
+      const newIndex = current.findIndex((slide) => slide.id === over.id)
+      if (oldIndex < 0 || newIndex < 0) return current
+      return arrayMove(current, oldIndex, newIndex)
     })
   }
 
@@ -255,33 +288,19 @@ export default function ReportBuilderPage() {
                   Add slides from the left to assemble a cross-page executive report.
                 </div>
               ) : (
-                selectedSlides.map((slide, index) => (
-                  <div key={slide.id} style={{ border: "1px solid #E8ECE7", borderRadius: 10, padding: 12, background: "#FCFCFA" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: "0.72rem", color: "#738071", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          {index + 1}. {slide.pageLabel}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                          <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#17201B" }}>{slide.title}</div>
-                          {isCustomModuleSlideKey(slide.slideKey) ? <span style={customChipStyle}>Custom</span> : null}
-                        </div>
-                        <div style={{ fontSize: "0.74rem", color: "#6E786F", marginTop: 4, lineHeight: 1.4 }}>{slide.summary}</div>
-                      </div>
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <button type="button" onClick={() => moveSlide(slide.id, -1)} aria-label="Move up" style={iconButtonStyle}>
-                          <ChevronUp size={14} />
-                        </button>
-                        <button type="button" onClick={() => moveSlide(slide.id, 1)} aria-label="Move down" style={iconButtonStyle}>
-                          <ChevronDown size={14} />
-                        </button>
-                        <button type="button" onClick={() => removeSlide(slide.id)} aria-label="Remove slide" style={iconButtonStyle}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSelectedDeckDragEnd}>
+                  <SortableContext items={selectedSlides.map((slide) => slide.id)} strategy={verticalListSortingStrategy}>
+                    {selectedSlides.map((slide, index) => (
+                      <SortableDeckSlideCard
+                        key={slide.id}
+                        slide={slide}
+                        index={index}
+                        onMove={moveSlide}
+                        onRemove={removeSlide}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
 
@@ -378,6 +397,67 @@ const customChipStyle: CSSProperties = {
   padding: "0 8px",
   display: "inline-flex",
   alignItems: "center",
+}
+
+function SortableDeckSlideCard({
+  slide,
+  index,
+  onMove,
+  onRemove,
+}: {
+  slide: SavedReportDeckSlide
+  index: number
+  onMove: (id: string, direction: -1 | 1) => void
+  onRemove: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: slide.id })
+
+  const style: CSSProperties = {
+    border: "1px solid #E8ECE7",
+    borderRadius: 10,
+    padding: 12,
+    background: "#FCFCFA",
+    transform: CSS.Transform.toString(transform),
+    transition,
+    boxShadow: isDragging ? "0 18px 44px rgba(20, 28, 22, 0.14)" : undefined,
+    opacity: isDragging ? 0.82 : 1,
+    cursor: "grab",
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: "0.72rem", color: "#738071", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            {index + 1}. {slide.pageLabel}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#17201B" }}>{slide.title}</div>
+            {isCustomModuleSlideKey(slide.slideKey) ? <span style={customChipStyle}>Custom</span> : null}
+          </div>
+          <div style={{ fontSize: "0.74rem", color: "#6E786F", marginTop: 4, lineHeight: 1.4 }}>{slide.summary}</div>
+        </div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMove(slide.id, -1) }} aria-label="Move up" style={iconButtonStyle}>
+            <ChevronUp size={14} />
+          </button>
+          <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMove(slide.id, 1) }} aria-label="Move down" style={iconButtonStyle}>
+            <ChevronDown size={14} />
+          </button>
+          <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRemove(slide.id) }} aria-label="Remove slide" style={iconButtonStyle}>
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const iconButtonStyle: CSSProperties = {

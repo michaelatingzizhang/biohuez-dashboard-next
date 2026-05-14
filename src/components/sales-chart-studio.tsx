@@ -111,6 +111,15 @@ function writeSavedModules(storageKey: string, modules: SavedChartModule[]) {
   window.localStorage.setItem(storageKey, JSON.stringify(modules))
 }
 
+function formatMetricFormat(format: MetricFormat) {
+  if (format === "money2") return "Currency"
+  if (format === "money") return "Money"
+  if (format === "percent") return "Percent"
+  if (format === "ratio") return "Ratio"
+  if (format === "rank") return "Rank"
+  return "Number"
+}
+
 export function ChartStudio({
   datasets,
   storageKey,
@@ -172,6 +181,7 @@ export function ChartStudio({
     () => Object.fromEntries(datasets.map((dataset) => [dataset.key, dataset])),
     [datasets],
   )
+  const activeDataset = datasetsByKey[draft.datasetKey]
 
   function openCreate() {
     setDraft(defaultDraft(datasets))
@@ -320,60 +330,88 @@ export function ChartStudio({
                 />
               </label>
 
-              <label>
-                <span>Dataset</span>
-                <select value={draft.datasetKey} onChange={(event) => syncDraftForDataset(event.target.value)}>
-                  {datasets.map((dataset) => (
-                    <option key={dataset.key} value={dataset.key}>
-                      {dataset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="sales-chart-builder-layout">
+                <div className="sales-chart-builder-browser">
+                  <span>Schema Browser</span>
+                  <div className="sales-chart-dataset-list">
+                    {datasets.map((dataset) => {
+                      const isActive = draft.datasetKey === dataset.key
+                      return (
+                        <button
+                          key={dataset.key}
+                          type="button"
+                          className={cn("sales-chart-dataset-item", isActive && "is-active")}
+                          onClick={() => syncDraftForDataset(dataset.key)}
+                        >
+                          <strong>{dataset.label}</strong>
+                          <small>{dataset.subtitle}</small>
+                          <em>{dataset.metrics.length} fields</em>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
 
-              <div className="sales-chart-builder-segmented">
-                {(["line", "area", "bar"] as ChartType[]).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={cn(draft.chartType === type && "is-active")}
-                    onClick={() => setDraft((current) => ({ ...current, chartType: type }))}
-                  >
-                    {type}
-                  </button>
-                ))}
+                <div className="sales-chart-builder-fields">
+                  <div className="sales-chart-builder-field-header">
+                    <div>
+                      <span>Selected Dataset</span>
+                      <strong>{activeDataset?.label || "Choose a dataset"}</strong>
+                      {activeDataset?.subtitle ? <p>{activeDataset.subtitle}</p> : null}
+                    </div>
+                    <div className="sales-chart-builder-segmented">
+                      {(["line", "area", "bar"] as ChartType[]).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          className={cn(draft.chartType === type && "is-active")}
+                          onClick={() => setDraft((current) => ({ ...current, chartType: type }))}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="sales-chart-field-list">
+                    {(activeDataset?.metrics || []).map((metric) => {
+                      const isPrimary = draft.primaryMetric === metric.key
+                      const isSecondary = draft.secondaryMetric === metric.key
+                      return (
+                        <div key={metric.key} className="sales-chart-field-row">
+                          <div className="sales-chart-field-meta">
+                            <i style={{ background: metric.color }} />
+                            <div>
+                              <strong>{metric.label}</strong>
+                              <small>{formatMetricFormat(metric.format)}</small>
+                            </div>
+                          </div>
+                          <div className="sales-chart-field-actions">
+                            <button
+                              type="button"
+                              className={cn(isPrimary && "is-active")}
+                              onClick={() => setDraft((current) => ({ ...current, primaryMetric: metric.key }))}
+                            >
+                              Primary
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(isSecondary && "is-active")}
+                              onClick={() => setDraft((current) => ({
+                                ...current,
+                                secondaryMetric: current.secondaryMetric === metric.key ? null : metric.key,
+                              }))}
+                              disabled={metric.key === draft.primaryMetric}
+                            >
+                              Secondary
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
-
-              <label>
-                <span>Primary Metric</span>
-                <select
-                  value={draft.primaryMetric}
-                  onChange={(event) => setDraft((current) => ({ ...current, primaryMetric: event.target.value }))}
-                >
-                  {(datasetsByKey[draft.datasetKey]?.metrics || []).map((metric) => (
-                    <option key={metric.key} value={metric.key}>
-                      {metric.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>Secondary Metric</span>
-                <select
-                  value={draft.secondaryMetric || ""}
-                  onChange={(event) => setDraft((current) => ({ ...current, secondaryMetric: event.target.value || null }))}
-                >
-                  <option value="">None</option>
-                  {(datasetsByKey[draft.datasetKey]?.metrics || [])
-                    .filter((metric) => metric.key !== draft.primaryMetric)
-                    .map((metric) => (
-                      <option key={metric.key} value={metric.key}>
-                        {metric.label}
-                      </option>
-                    ))}
-                </select>
-              </label>
             </div>
 
             <div className="sales-chart-builder-footer">
