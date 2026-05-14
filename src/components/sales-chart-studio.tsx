@@ -44,6 +44,12 @@ export interface ChartStudioMetricDef {
   color: string
 }
 
+export interface ChartStudioDimensionDef {
+  key: string
+  label: string
+  formatter?: (value: unknown) => string
+}
+
 export interface ChartStudioDataset {
   key: string
   label: string
@@ -51,6 +57,7 @@ export interface ChartStudioDataset {
   xKey: string
   data: Array<Record<string, unknown>>
   metrics: ChartStudioMetricDef[]
+  dimensions?: ChartStudioDimensionDef[]
   xTickFormatter?: (value: unknown) => string
 }
 
@@ -60,6 +67,7 @@ interface SavedChartModule {
   id: string
   title: string
   datasetKey: string
+  dimensionKey: string
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -69,6 +77,7 @@ export interface SavedChartStudioModule {
   id: string
   title: string
   datasetKey: string
+  dimensionKey: string
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -78,6 +87,7 @@ interface DraftModule {
   id?: string
   title: string
   datasetKey: string
+  dimensionKey: string
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -85,9 +95,11 @@ interface DraftModule {
 
 function defaultDraft(datasets: ChartStudioDataset[]): DraftModule {
   const firstDataset = datasets[0]
+  const firstDimension = getDatasetDimensions(firstDataset)[0]?.key || firstDataset?.xKey || ""
   return {
     title: "",
     datasetKey: firstDataset?.key || "",
+    dimensionKey: firstDimension,
     chartType: "line",
     primaryMetric: firstDataset?.metrics[0]?.key || "",
     secondaryMetric: firstDataset?.metrics[1]?.key || null,
@@ -120,6 +132,82 @@ function formatMetricFormat(format: MetricFormat) {
   return "Number"
 }
 
+function titleizeKey(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function getDatasetDimensions(dataset?: ChartStudioDataset): ChartStudioDimensionDef[] {
+  if (!dataset) return []
+  if (dataset.dimensions?.length) return dataset.dimensions
+
+  const metricKeys = new Set(dataset.metrics.map((metric) => metric.key))
+  const keys = new Set<string>([dataset.xKey])
+  for (const row of dataset.data.slice(0, 8)) {
+    for (const [key, value] of Object.entries(row)) {
+      if (metricKeys.has(key)) continue
+      if (value == null) continue
+      if (typeof value === "string" || typeof value === "number") {
+        keys.add(key)
+      }
+    }
+  }
+
+  return Array.from(keys).map((key) => ({
+    key,
+    label: titleizeKey(key),
+    formatter: key === dataset.xKey ? dataset.xTickFormatter : undefined,
+  }))
+}
+
+function aggregateMetricValues(values: number[], format: MetricFormat) {
+  if (!values.length) return null
+  if (format === "rank") return Math.min(...values)
+  if (format === "percent" || format === "ratio" || format === "money2") {
+    return values.reduce((sum, value) => sum + value, 0) / values.length
+  }
+  return values.reduce((sum, value) => sum + value, 0)
+}
+
+function buildChartData(dataset: ChartStudioDataset, module: SavedChartModule) {
+  const dimensionKey = module.dimensionKey || dataset.xKey
+  if (dimensionKey === dataset.xKey) {
+    return dataset.data
+  }
+
+  const grouped = new Map<string, Record<string, unknown>>()
+  for (const row of dataset.data) {
+    const rawDimension = row[dimensionKey]
+    if (rawDimension == null || rawDimension === "") continue
+    const bucket = String(rawDimension)
+    const current = grouped.get(bucket) || { [dimensionKey]: rawDimension }
+
+    for (const metric of dataset.metrics) {
+      const rawValue = row[metric.key]
+      const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue)
+      if (!Number.isFinite(numericValue)) continue
+      const valuesKey = `__${metric.key}_values`
+      const storedValues = Array.isArray(current[valuesKey]) ? current[valuesKey] as number[] : []
+      current[valuesKey] = [...storedValues, numericValue]
+    }
+
+    grouped.set(bucket, current)
+  }
+
+  return Array.from(grouped.values()).map((row) => {
+    const nextRow: Record<string, unknown> = { [dimensionKey]: row[dimensionKey] }
+    for (const metric of dataset.metrics) {
+      const values = Array.isArray(row[`__${metric.key}_values`]) ? row[`__${metric.key}_values`] as number[] : []
+      nextRow[metric.key] = aggregateMetricValues(values, metric.format)
+    }
+    return nextRow
+  })
+}
+
 export function ChartStudio({
   datasets,
   storageKey,
@@ -147,21 +235,34 @@ export function ChartStudio({
   const [editing, setEditing] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [draft, setDraft] = useState<DraftModule>(() => defaultDraft(datasets))
+  const datasetsByKey = useMemo(
+    () => Object.fromEntries(datasets.map((dataset) => [dataset.key, dataset])),
+    [datasets],
+  )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   useEffect(() => {
-    const saved = readChartStudioModules(storageKey)
+    const saved = readChartStudioModules(storageKey).map((module) => {
+      const dataset = datasetsByKey[module.datasetKey]
+      const defaultDimensionKey = getDatasetDimensions(dataset)[0]?.key || dataset?.xKey || ""
+      return {
+        ...module,
+        dimensionKey: module.dimensionKey || defaultDimensionKey,
+      }
+    })
     setModules(saved)
     if (!saved.length && datasets.length) {
       const firstDataset = datasets[0]
+      const defaultDimensionKey = getDatasetDimensions(firstDataset)[0]?.key || firstDataset.xKey
       const seeded: SavedChartModule[] = [
         {
           id: `module-${Date.now()}`,
           title: `${firstDataset.label} ${seedSuffix}`,
           datasetKey: firstDataset.key,
+          dimensionKey: defaultDimensionKey,
           chartType: "line",
           primaryMetric: firstDataset.metrics[0]?.key || "",
           secondaryMetric: firstDataset.metrics[1]?.key || null,
@@ -170,18 +271,15 @@ export function ChartStudio({
       setModules(seeded)
       writeSavedModules(storageKey, seeded)
     }
-  }, [datasets, seedSuffix, storageKey])
+  }, [datasets, datasetsByKey, seedSuffix, storageKey])
 
   useEffect(() => {
     if (!modules.length) return
     writeSavedModules(storageKey, modules)
   }, [modules, storageKey])
 
-  const datasetsByKey = useMemo(
-    () => Object.fromEntries(datasets.map((dataset) => [dataset.key, dataset])),
-    [datasets],
-  )
   const activeDataset = datasetsByKey[draft.datasetKey]
+  const activeDimensions = getDatasetDimensions(activeDataset)
 
   function openCreate() {
     setDraft(defaultDraft(datasets))
@@ -201,9 +299,13 @@ export function ChartStudio({
   function syncDraftForDataset(nextDatasetKey: string) {
     const dataset = datasetsByKey[nextDatasetKey]
     if (!dataset) return
+    const dimensions = getDatasetDimensions(dataset)
     setDraft((current) => ({
       ...current,
       datasetKey: nextDatasetKey,
+      dimensionKey: dimensions.some((dimension) => dimension.key === current.dimensionKey)
+        ? current.dimensionKey
+        : dimensions[0]?.key || dataset.xKey,
       primaryMetric: dataset.metrics.some((metric) => metric.key === current.primaryMetric)
         ? current.primaryMetric
         : dataset.metrics[0]?.key || "",
@@ -222,6 +324,7 @@ export function ChartStudio({
       id: draft.id || `module-${Date.now()}`,
       title,
       datasetKey: draft.datasetKey,
+      dimensionKey: draft.dimensionKey || dataset.xKey,
       chartType: draft.chartType,
       primaryMetric: draft.primaryMetric,
       secondaryMetric: draft.secondaryMetric || null,
@@ -345,7 +448,7 @@ export function ChartStudio({
                         >
                           <strong>{dataset.label}</strong>
                           <small>{dataset.subtitle}</small>
-                          <em>{dataset.metrics.length} fields</em>
+                          <em>{getDatasetDimensions(dataset).length + dataset.metrics.length} fields</em>
                         </button>
                       )
                     })}
@@ -373,6 +476,37 @@ export function ChartStudio({
                     </div>
                   </div>
 
+                  <div className="sales-chart-builder-group">
+                    <span>Dimensions</span>
+                    <div className="sales-chart-field-list">
+                      {activeDimensions.map((dimension) => {
+                        const isActive = draft.dimensionKey === dimension.key
+                        return (
+                          <div key={dimension.key} className="sales-chart-field-row">
+                            <div className="sales-chart-field-meta">
+                              <i style={{ background: "#8AA18D" }} />
+                              <div>
+                                <strong>{dimension.label}</strong>
+                                <small>{dimension.key === activeDataset?.xKey ? "Default axis field" : "Available grouping field"}</small>
+                              </div>
+                            </div>
+                            <div className="sales-chart-field-actions">
+                              <button
+                                type="button"
+                                className={cn(isActive && "is-active")}
+                                onClick={() => setDraft((current) => ({ ...current, dimensionKey: dimension.key }))}
+                              >
+                                X Axis
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="sales-chart-builder-group">
+                    <span>Measures</span>
                   <div className="sales-chart-field-list">
                     {(activeDataset?.metrics || []).map((metric) => {
                       const isPrimary = draft.primaryMetric === metric.key
@@ -390,7 +524,11 @@ export function ChartStudio({
                             <button
                               type="button"
                               className={cn(isPrimary && "is-active")}
-                              onClick={() => setDraft((current) => ({ ...current, primaryMetric: metric.key }))}
+                              onClick={() => setDraft((current) => ({
+                                ...current,
+                                primaryMetric: metric.key,
+                                secondaryMetric: current.secondaryMetric === metric.key ? null : current.secondaryMetric,
+                              }))}
                             >
                               Primary
                             </button>
@@ -409,6 +547,7 @@ export function ChartStudio({
                         </div>
                       )
                     })}
+                  </div>
                   </div>
                 </div>
               </div>
@@ -432,8 +571,10 @@ export function ChartStudio({
             const secondaryMetric = module.secondaryMetric
               ? dataset.metrics.find((metric) => metric.key === module.secondaryMetric) || null
               : null
+            const dimension = getDatasetDimensions(dataset).find((item) => item.key === module.dimensionKey)
             const summaryBits = [
               dataset.subtitle,
+              dimension ? `Grouped by: ${dimension.label}.` : null,
               primaryMetric ? `Primary metric: ${primaryMetric.label}.` : null,
               secondaryMetric ? `Secondary metric: ${secondaryMetric.label}.` : null,
             ].filter(Boolean)
@@ -577,18 +718,22 @@ function CustomChartRenderer({
   const secondaryMetric = module.secondaryMetric
     ? dataset.metrics.find((metric) => metric.key === module.secondaryMetric) || null
     : null
+  const dimension = getDatasetDimensions(dataset).find((item) => item.key === module.dimensionKey)
+  const chartData = buildChartData(dataset, module)
+  const xKey = module.dimensionKey || dataset.xKey
+  const xTickFormatter = dimension?.formatter || (xKey === dataset.xKey ? dataset.xTickFormatter : undefined)
   const useDualAxis = Boolean(secondaryMetric)
   const reversePrimary = primaryMetric?.format === "rank" && !secondaryMetric
   const reverseSecondary = secondaryMetric?.format === "rank"
 
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={dataset.data} margin={{ top: 8, right: 20, left: 6, bottom: 8 }}>
+      <ComposedChart data={chartData} margin={{ top: 8, right: 20, left: 6, bottom: 8 }}>
         <CartesianGrid strokeDasharray="2 5" stroke="#D8DDD7" vertical={false} />
         <XAxis
-          dataKey={dataset.xKey}
+          dataKey={xKey}
           tick={{ fontSize: 11, fill: "#6B746C" }}
-          tickFormatter={dataset.xTickFormatter}
+          tickFormatter={xTickFormatter}
           axisLine={false}
           tickLine={false}
         />
@@ -623,7 +768,7 @@ function CustomChartRenderer({
             const metric = dataset.metrics.find((item) => item.key === name) || primaryMetric
             return [formatTooltipValue(Number(value), metric?.format), metric?.label || String(name)]
           }}
-          labelFormatter={(value) => dataset.xTickFormatter ? dataset.xTickFormatter(value) : String(value)}
+          labelFormatter={(value) => xTickFormatter ? xTickFormatter(value) : String(value)}
         />
         <Legend formatter={(value) => dataset.metrics.find((metric) => metric.key === value)?.label || String(value)} />
 

@@ -1829,6 +1829,19 @@
     gap: 10px;
   }
 
+  .sales-chart-builder-group {
+    display: grid;
+    gap: 8px;
+  }
+
+  .sales-chart-builder-group > span {
+    color: #677368;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
   .sales-chart-dataset-list,
   .sales-chart-field-list {
     display: grid;
