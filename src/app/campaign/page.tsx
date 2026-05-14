@@ -984,6 +984,8 @@ export default function CampaignPage() {
             <ChartStudio
               datasets={campaignChartDatasets}
               storageKey="biohuez:campaign-custom-chart-modules"
+              pagePath="/campaign"
+              pageLabel="Campaign"
               description="Build reusable campaign chart cards from spend, sales, term-tier, and Streamlit parity datasets."
               titlePlaceholder="Efficiency Story"
               seedSuffix="Module"

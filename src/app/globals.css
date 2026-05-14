@@ -1842,6 +1842,19 @@
     letter-spacing: 0.07em;
   }
 
+  .sales-chart-inline-field {
+    display: grid;
+    gap: 6px;
+  }
+
+  .sales-chart-inline-field > span {
+    color: #677368;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
   .sales-chart-dataset-list,
   .sales-chart-field-list {
     display: grid;

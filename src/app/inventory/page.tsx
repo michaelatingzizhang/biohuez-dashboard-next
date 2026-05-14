@@ -924,6 +924,8 @@ export default function InventoryPage() {
         <ChartStudio
           datasets={inventoryChartDatasets}
           storageKey="biohuez:inventory-custom-chart-modules"
+          pagePath="/inventory"
+          pageLabel="Inventory"
           description="Build reusable inventory chart cards from coverage, aging, FC distribution, risk, and movement datasets."
           titlePlaceholder="Coverage Story"
           seedSuffix="Module"

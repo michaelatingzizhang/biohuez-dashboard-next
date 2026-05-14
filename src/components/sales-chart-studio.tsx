@@ -32,7 +32,8 @@ import {
 } from "recharts"
 import { Check, Pencil, Plus, Settings2, Trash2, X } from "lucide-react"
 import { ReportSlide } from "@/components/report-slide"
-import { buildCustomModuleSlideKey } from "@/lib/report-library"
+import { buildCustomModuleSlideKey, buildGlobalReportSlideId } from "@/lib/report-library"
+import { readSavedReportDeck, type SavedReportDeckSlide, writeSavedReportDeck } from "@/lib/report-deck-storage"
 import { cn } from "@/lib/utils"
 
 type MetricFormat = "money" | "money2" | "number" | "percent" | "ratio" | "rank"
@@ -68,6 +69,8 @@ interface SavedChartModule {
   title: string
   datasetKey: string
   dimensionKey: string
+  filterDimensionKey: string | null
+  filterValue: string | null
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -78,6 +81,8 @@ export interface SavedChartStudioModule {
   title: string
   datasetKey: string
   dimensionKey: string
+  filterDimensionKey: string | null
+  filterValue: string | null
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -88,6 +93,8 @@ interface DraftModule {
   title: string
   datasetKey: string
   dimensionKey: string
+  filterDimensionKey: string | null
+  filterValue: string | null
   chartType: ChartType
   primaryMetric: string
   secondaryMetric: string | null
@@ -100,6 +107,8 @@ function defaultDraft(datasets: ChartStudioDataset[]): DraftModule {
     title: "",
     datasetKey: firstDataset?.key || "",
     dimensionKey: firstDimension,
+    filterDimensionKey: null,
+    filterValue: null,
     chartType: "line",
     primaryMetric: firstDataset?.metrics[0]?.key || "",
     secondaryMetric: firstDataset?.metrics[1]?.key || null,
@@ -175,12 +184,15 @@ function aggregateMetricValues(values: number[], format: MetricFormat) {
 
 function buildChartData(dataset: ChartStudioDataset, module: SavedChartModule) {
   const dimensionKey = module.dimensionKey || dataset.xKey
+  const filteredRows = module.filterDimensionKey && module.filterValue
+    ? dataset.data.filter((row) => String(row[module.filterDimensionKey!] ?? "") === module.filterValue)
+    : dataset.data
   if (dimensionKey === dataset.xKey) {
-    return dataset.data
+    return filteredRows
   }
 
   const grouped = new Map<string, Record<string, unknown>>()
-  for (const row of dataset.data) {
+  for (const row of filteredRows) {
     const rawDimension = row[dimensionKey]
     if (rawDimension == null || rawDimension === "") continue
     const bucket = String(rawDimension)
@@ -208,9 +220,22 @@ function buildChartData(dataset: ChartStudioDataset, module: SavedChartModule) {
   })
 }
 
+function getDimensionValues(dataset: ChartStudioDataset | undefined, dimensionKey: string | null) {
+  if (!dataset || !dimensionKey) return []
+  const values = new Set<string>()
+  for (const row of dataset.data) {
+    const rawValue = row[dimensionKey]
+    if (rawValue == null || rawValue === "") continue
+    values.add(String(rawValue))
+  }
+  return Array.from(values).sort((a, b) => a.localeCompare(b))
+}
+
 export function ChartStudio({
   datasets,
   storageKey,
+  pagePath,
+  pageLabel,
   title = "Custom Chart Modules",
   description = "Build reusable chart cards from the current page datasets and drag them into the order you want.",
   emptyTitle = "No custom charts yet",
@@ -222,6 +247,8 @@ export function ChartStudio({
 }: {
   datasets: ChartStudioDataset[]
   storageKey: string
+  pagePath: string
+  pageLabel: string
   title?: string
   description?: string
   emptyTitle?: string
@@ -251,6 +278,8 @@ export function ChartStudio({
       return {
         ...module,
         dimensionKey: module.dimensionKey || defaultDimensionKey,
+        filterDimensionKey: module.filterDimensionKey || null,
+        filterValue: module.filterValue || null,
       }
     })
     setModules(saved)
@@ -263,6 +292,8 @@ export function ChartStudio({
           title: `${firstDataset.label} ${seedSuffix}`,
           datasetKey: firstDataset.key,
           dimensionKey: defaultDimensionKey,
+          filterDimensionKey: null,
+          filterValue: null,
           chartType: "line",
           primaryMetric: firstDataset.metrics[0]?.key || "",
           secondaryMetric: firstDataset.metrics[1]?.key || null,
@@ -280,6 +311,7 @@ export function ChartStudio({
 
   const activeDataset = datasetsByKey[draft.datasetKey]
   const activeDimensions = getDatasetDimensions(activeDataset)
+  const activeFilterValues = getDimensionValues(activeDataset, draft.filterDimensionKey)
 
   function openCreate() {
     setDraft(defaultDraft(datasets))
@@ -306,6 +338,12 @@ export function ChartStudio({
       dimensionKey: dimensions.some((dimension) => dimension.key === current.dimensionKey)
         ? current.dimensionKey
         : dimensions[0]?.key || dataset.xKey,
+      filterDimensionKey: dimensions.some((dimension) => dimension.key === current.filterDimensionKey)
+        ? current.filterDimensionKey
+        : null,
+      filterValue: dimensions.some((dimension) => dimension.key === current.filterDimensionKey)
+        ? current.filterValue
+        : null,
       primaryMetric: dataset.metrics.some((metric) => metric.key === current.primaryMetric)
         ? current.primaryMetric
         : dataset.metrics[0]?.key || "",
@@ -325,6 +363,8 @@ export function ChartStudio({
       title,
       datasetKey: draft.datasetKey,
       dimensionKey: draft.dimensionKey || dataset.xKey,
+      filterDimensionKey: draft.filterDimensionKey || null,
+      filterValue: draft.filterDimensionKey ? draft.filterValue || null : null,
       chartType: draft.chartType,
       primaryMetric: draft.primaryMetric,
       secondaryMetric: draft.secondaryMetric || null,
@@ -362,6 +402,20 @@ export function ChartStudio({
     })
   }
 
+  function addModuleToReport(module: SavedChartModule) {
+    const slide: SavedReportDeckSlide = {
+      id: buildGlobalReportSlideId(pagePath, buildCustomModuleSlideKey(module.id)),
+      path: pagePath,
+      pageLabel,
+      slideKey: buildCustomModuleSlideKey(module.id),
+      title: module.title,
+      summary: "Saved custom chart module.",
+    }
+    const currentDeck = readSavedReportDeck()
+    if (currentDeck.some((item) => item.id === slide.id)) return
+    writeSavedReportDeck([...currentDeck, slide])
+  }
+
   return (
     <div className={cn("sales-custom-studio", modules.length > 0 && "has-report-slides")}>
       <div className="sales-custom-studio-shell">
@@ -396,6 +450,7 @@ export function ChartStudio({
                   module={module}
                   dataset={datasetsByKey[module.datasetKey]}
                   editing={editing}
+                  onAddToReport={addModuleToReport}
                   onEdit={openEdit}
                   onRemove={removeModule}
                 />
@@ -507,47 +562,90 @@ export function ChartStudio({
 
                   <div className="sales-chart-builder-group">
                     <span>Measures</span>
-                  <div className="sales-chart-field-list">
-                    {(activeDataset?.metrics || []).map((metric) => {
-                      const isPrimary = draft.primaryMetric === metric.key
-                      const isSecondary = draft.secondaryMetric === metric.key
-                      return (
-                        <div key={metric.key} className="sales-chart-field-row">
-                          <div className="sales-chart-field-meta">
-                            <i style={{ background: metric.color }} />
-                            <div>
-                              <strong>{metric.label}</strong>
-                              <small>{formatMetricFormat(metric.format)}</small>
+                    <div className="sales-chart-field-list">
+                      {(activeDataset?.metrics || []).map((metric) => {
+                        const isPrimary = draft.primaryMetric === metric.key
+                        const isSecondary = draft.secondaryMetric === metric.key
+                        return (
+                          <div key={metric.key} className="sales-chart-field-row">
+                            <div className="sales-chart-field-meta">
+                              <i style={{ background: metric.color }} />
+                              <div>
+                                <strong>{metric.label}</strong>
+                                <small>{formatMetricFormat(metric.format)}</small>
+                              </div>
+                            </div>
+                            <div className="sales-chart-field-actions">
+                              <button
+                                type="button"
+                                className={cn(isPrimary && "is-active")}
+                                onClick={() => setDraft((current) => ({
+                                  ...current,
+                                  primaryMetric: metric.key,
+                                  secondaryMetric: current.secondaryMetric === metric.key ? null : current.secondaryMetric,
+                                }))}
+                              >
+                                Primary
+                              </button>
+                              <button
+                                type="button"
+                                className={cn(isSecondary && "is-active")}
+                                onClick={() => setDraft((current) => ({
+                                  ...current,
+                                  secondaryMetric: current.secondaryMetric === metric.key ? null : metric.key,
+                                }))}
+                                disabled={metric.key === draft.primaryMetric}
+                              >
+                                Secondary
+                              </button>
                             </div>
                           </div>
-                          <div className="sales-chart-field-actions">
-                            <button
-                              type="button"
-                              className={cn(isPrimary && "is-active")}
-                              onClick={() => setDraft((current) => ({
-                                ...current,
-                                primaryMetric: metric.key,
-                                secondaryMetric: current.secondaryMetric === metric.key ? null : current.secondaryMetric,
-                              }))}
-                            >
-                              Primary
-                            </button>
-                            <button
-                              type="button"
-                              className={cn(isSecondary && "is-active")}
-                              onClick={() => setDraft((current) => ({
-                                ...current,
-                                secondaryMetric: current.secondaryMetric === metric.key ? null : metric.key,
-                              }))}
-                              disabled={metric.key === draft.primaryMetric}
-                            >
-                              Secondary
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
+
+                  <div className="sales-chart-builder-group">
+                    <span>Filter</span>
+                    <label className="sales-chart-inline-field">
+                      <span>Filter Field</span>
+                      <select
+                        value={draft.filterDimensionKey || ""}
+                        onChange={(event) => {
+                          const nextKey = event.target.value || null
+                          const nextValues = getDimensionValues(activeDataset, nextKey)
+                          setDraft((current) => ({
+                            ...current,
+                            filterDimensionKey: nextKey,
+                            filterValue: nextValues.includes(current.filterValue || "") ? current.filterValue : null,
+                          }))
+                        }}
+                      >
+                        <option value="">All rows</option>
+                        {activeDimensions.map((dimension) => (
+                          <option key={dimension.key} value={dimension.key}>
+                            {dimension.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {draft.filterDimensionKey ? (
+                      <label className="sales-chart-inline-field">
+                        <span>Filter Value</span>
+                        <select
+                          value={draft.filterValue || ""}
+                          onChange={(event) => setDraft((current) => ({ ...current, filterValue: event.target.value || null }))}
+                        >
+                          <option value="">All values</option>
+                          {activeFilterValues.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -575,6 +673,7 @@ export function ChartStudio({
             const summaryBits = [
               dataset.subtitle,
               dimension ? `Grouped by: ${dimension.label}.` : null,
+              module.filterDimensionKey && module.filterValue ? `Filtered to ${titleizeKey(module.filterDimensionKey)} = ${module.filterValue}.` : null,
               primaryMetric ? `Primary metric: ${primaryMetric.label}.` : null,
               secondaryMetric ? `Secondary metric: ${secondaryMetric.label}.` : null,
             ].filter(Boolean)
@@ -619,6 +718,8 @@ export function SalesChartStudio({
     <ChartStudio
       datasets={datasets}
       storageKey="biohuez:sales-custom-chart-modules"
+      pagePath="/sales"
+      pageLabel="Sales"
       description="Build reusable chart cards from the Sales datasets and drag them into the order you want."
       titlePlaceholder="Weekly Demand Story"
       seedSuffix="Snapshot"
@@ -631,12 +732,14 @@ function SortableChartModuleCard({
   module,
   dataset,
   editing,
+  onAddToReport,
   onEdit,
   onRemove,
 }: {
   module: SavedChartModule
   dataset?: ChartStudioDataset
   editing: boolean
+  onAddToReport: (module: SavedChartModule) => void
   onEdit: (module: SavedChartModule) => void
   onRemove: (id: string) => void
 }) {
@@ -674,6 +777,18 @@ function SortableChartModuleCard({
           {dataset?.subtitle ? <small>{dataset.subtitle}</small> : null}
         </div>
         <div className="sales-custom-module-card-actions">
+          <button
+            type="button"
+            className="sales-custom-module-icon"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              onAddToReport(module)
+            }}
+            aria-label={`Add ${module.title} to big report`}
+          >
+            <Plus size={13} />
+          </button>
           <button
             type="button"
             className="sales-custom-module-icon"

@@ -540,6 +540,8 @@ export default function ReturnsPage() {
         <ChartStudio
           datasets={returnsChartDatasets}
           storageKey="biohuez:returns-custom-chart-modules"
+          pagePath="/returns"
+          pageLabel="Returns"
           description="Build reusable returns chart cards from time series, SKU risk, reason, and trend datasets."
           titlePlaceholder="Return Risk Story"
           seedSuffix="Module"

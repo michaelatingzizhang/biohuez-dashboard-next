@@ -706,6 +706,8 @@ export default function FinancePage() {
         <ChartStudio
           datasets={financeChartDatasets}
           storageKey="biohuez:finance-custom-chart-modules"
+          pagePath="/finance"
+          pageLabel="Finance"
           description="Build reusable finance chart cards from the monthly P&L, margin, settlement, and unit-economics datasets."
           titlePlaceholder="Margin Pressure Story"
           seedSuffix="Module"
