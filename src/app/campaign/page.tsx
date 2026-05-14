@@ -3,12 +3,15 @@ import { LoadingSkeleton } from '@/components/loading-skeleton'
 import { DataState } from '@/components/data-state'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import { ReportSlide } from '@/components/report-slide'
+import { ChartStudio, type ChartStudioDataset, type ChartStudioMetricDef } from '@/components/sales-chart-studio'
+import { isCustomModuleSlideKey } from '@/lib/report-library'
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface AdsRow {
@@ -250,10 +253,31 @@ function fmtInt(n: number | null | undefined) {
   return Number(n).toLocaleString()
 }
 
+function campaignStudioMetric(
+  key: string,
+  label: string,
+  format: ChartStudioMetricDef['format'],
+  color: string,
+): ChartStudioMetricDef {
+  return { key, label, format, color }
+}
+
 export default function CampaignPage() {
   const [data, setData] = useState<CampaignData | null>(null)
   const [loading, setLoading] = useState(true)
   const filters = useDashboardFilters()
+  const params = useSearchParams()
+  const requestedReportSlide = params.get('reportSlide')
+  const [activeTab, setActiveTab] = useState(() => isCustomModuleSlideKey(requestedReportSlide) ? 'custom-studio' : 'overview')
+
+  useEffect(() => {
+    if (!requestedReportSlide) return
+    if (isCustomModuleSlideKey(requestedReportSlide)) {
+      setActiveTab('custom-studio')
+      return
+    }
+    setActiveTab('overview')
+  }, [requestedReportSlide])
 
   useEffect(() => {
     fetch('/api/campaign')
@@ -367,19 +391,120 @@ export default function CampaignPage() {
     tierMap[tier].clicks += t.clicks
     tierMap[tier].queries += 1
   }
+  const campaignChartDatasets: ChartStudioDataset[] = [
+    {
+      key: 'daily-spend-sales',
+      label: 'Daily Spend vs Sales',
+      subtitle: 'Daily ad spend and attributed sales.',
+      xKey: 'date',
+      xTickFormatter: (value: unknown) => String(value || '').slice(5),
+      data: dailyChart,
+      metrics: [
+        campaignStudioMetric('sales', 'Ad Sales', 'money', '#B8D4AE'),
+        campaignStudioMetric('spend', 'Spend', 'money', '#E67E22'),
+      ],
+    },
+    {
+      key: 'campaign-performance',
+      label: 'Campaign Performance',
+      subtitle: 'Spend, sales, orders, ACOS, ROAS, and CTR by campaign.',
+      xKey: 'name',
+      data: campaigns.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('spend', 'Spend', 'money', '#E67E22'),
+        campaignStudioMetric('sales', 'Sales', 'money', '#2D4A27'),
+        campaignStudioMetric('orders', 'Orders', 'number', '#6B8F61'),
+        campaignStudioMetric('acos', 'ACOS', 'percent', '#C0392B'),
+        campaignStudioMetric('roas', 'ROAS', 'ratio', '#2980B9'),
+        campaignStudioMetric('ctr', 'CTR', 'percent', '#AEA33C'),
+      ],
+    },
+    {
+      key: 'tier-performance',
+      label: 'Tier Performance',
+      subtitle: 'Clicks, purchases, and conversion rate by search term tier.',
+      xKey: 'tier',
+      data: insights.tier_performance.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('clicks', 'Clicks', 'number', '#B8D4AE'),
+        campaignStudioMetric('purchases', 'Purchases', 'number', '#2D4A27'),
+        campaignStudioMetric('conversion_rate', 'Conversion Rate', 'percent', '#C0392B'),
+        campaignStudioMetric('ctr', 'CTR', 'percent', '#2980B9'),
+        campaignStudioMetric('queries', 'Queries', 'number', '#6B8F61'),
+      ],
+    },
+    {
+      key: 'term-leaders',
+      label: 'Winning Terms',
+      subtitle: 'Latest-period clicks, purchases, purchase share, and CVR for winning terms.',
+      xKey: 'search_query',
+      data: insights.winning_terms.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('clicks', 'Clicks', 'number', '#B8D4AE'),
+        campaignStudioMetric('purchases', 'Purchases', 'number', '#2D4A27'),
+        campaignStudioMetric('purchase_share', 'Purchase Share', 'percent', '#2980B9'),
+        campaignStudioMetric('conversion_rate', 'CVR', 'percent', '#C0392B'),
+        campaignStudioMetric('impressions', 'Impressions', 'number', '#6B8F61'),
+      ],
+    },
+    {
+      key: 'scenario-groups',
+      label: 'Scenario Summary',
+      subtitle: 'Streamlit parity action-group rollup across scenarios A, B, C, D, and monitor.',
+      xKey: 'scenario',
+      data: parity.scenario_groups.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('spend', 'Spend', 'money', '#E67E22'),
+        campaignStudioMetric('sales', 'Sales', 'money', '#2D4A27'),
+        campaignStudioMetric('orders', 'Orders', 'number', '#6B8F61'),
+        campaignStudioMetric('avg_purchase_share', 'Purchase Share', 'percent', '#2980B9'),
+        campaignStudioMetric('avg_ad_cvr', 'Ad CVR', 'percent', '#C0392B'),
+        campaignStudioMetric('search_volume', 'Search Volume', 'number', '#AEA33C'),
+      ],
+    },
+    {
+      key: 'tier-profitability',
+      label: 'Tier Profitability',
+      subtitle: 'Spend, sales, pROAS, and CVR by Streamlit tier.',
+      xKey: 'tier',
+      data: parity.tier_summary.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('spend', 'Spend', 'money', '#E67E22'),
+        campaignStudioMetric('sales', 'Sales', 'money', '#2D4A27'),
+        campaignStudioMetric('proas', 'pROAS', 'ratio', '#2980B9'),
+        campaignStudioMetric('ad_cvr', 'Ad CVR', 'percent', '#C0392B'),
+        campaignStudioMetric('search_volume', 'Search Volume', 'number', '#6B8F61'),
+      ],
+    },
+    {
+      key: 'price-benchmark',
+      label: 'Price Benchmark',
+      subtitle: 'Market price, BioHuez price, and price delta by cluster.',
+      xKey: 'cluster',
+      data: parity.price_benchmark.map((row) => ({ ...row })),
+      metrics: [
+        campaignStudioMetric('mkt_price', 'Market Price', 'money', '#6B8F61'),
+        campaignStudioMetric('our_price', 'BioHuez Price', 'money', '#2D4A27'),
+        campaignStudioMetric('price_delta', 'Price Delta', 'money', '#C0392B'),
+        campaignStudioMetric('purchase_share', 'Purchase Share', 'percent', '#2980B9'),
+        campaignStudioMetric('search_volume', 'Search Volume', 'number', '#AEA33C'),
+      ],
+    },
+  ].filter((dataset) => dataset.data.length > 0)
 
   return (
     <div style={{ paddingBottom: 40 }}>
       <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 4, color: '#1A1A1A' }}>Campaigns</h1>
       <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>Advertising performance and search term analysis</p>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="dashboard-tabs-scroll">
           <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
             <TabsTrigger value="overview">Campaign Overview</TabsTrigger>
             <TabsTrigger value="terms">Search Terms</TabsTrigger>
             <TabsTrigger value="signals">Optimization Signals</TabsTrigger>
             <TabsTrigger value="streamlit">Streamlit Parity</TabsTrigger>
+            <TabsTrigger value="custom-studio">Custom Studio</TabsTrigger>
           </TabsList>
         </div>
 
@@ -837,6 +962,23 @@ export default function CampaignPage() {
               </div>
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="custom-studio">
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 12, padding: 16 }}>
+            <SectionHeader
+              title="Campaign Custom Modules"
+              subtitle="Build reusable campaign modules from spend, sales, term-tier, and Streamlit parity datasets."
+            />
+            <ChartStudio
+              datasets={campaignChartDatasets}
+              storageKey="biohuez:campaign-custom-chart-modules"
+              description="Build reusable campaign chart cards from spend, sales, term-tier, and Streamlit parity datasets."
+              titlePlaceholder="Efficiency Story"
+              seedSuffix="Module"
+              reportSlidePrefix="Campaign Custom Module"
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

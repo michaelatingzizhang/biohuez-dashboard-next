@@ -11,6 +11,7 @@ import { buildReportSlideKey } from "@/lib/report-library"
  */
 export interface ReportSlideProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string
+  slideKey?: string
   /** Short narrative shown only in report mode below the slide content. */
   message?: string
   /** Optional rich annotation shown only in report mode. */
@@ -23,6 +24,7 @@ export interface ReportSlideProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function ReportSlide({
   title,
+  slideKey,
   message,
   watch,
   action,
@@ -34,13 +36,18 @@ export function ReportSlide({
   return (
     <section
       data-report-slide=""
-      data-slide-key={buildReportSlideKey(title)}
+      data-slide-key={slideKey || buildReportSlideKey(title)}
       data-slide-title={title}
       data-slide-order={order ?? ""}
       data-slide-summary={message || watch || action || ""}
       className={cn("report-slide", className)}
       {...props}
     >
+      <header className="report-slide-header" aria-hidden="true">
+        <span>Presentation Slide</span>
+        <strong>{title}</strong>
+        {(message || watch) ? <p>{message || watch}</p> : null}
+      </header>
       <div className="report-slide-content">{children}</div>
       {(message || watch || action) ? (
         <aside className="report-slide-narrative" aria-label={`Slide narrative for ${title}`}>

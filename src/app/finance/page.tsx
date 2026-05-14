@@ -7,6 +7,7 @@ import { SectionHeader } from '@/components/section-header'
 import { DataState } from '@/components/data-state'
 import { SignalGrid } from '@/components/insight-card'
 import { ReportSlide } from '@/components/report-slide'
+import { ChartStudio, type ChartStudioDataset, type ChartStudioMetricDef } from '@/components/sales-chart-studio'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import {
   BarChart, Bar, LineChart, Line,
@@ -165,6 +166,15 @@ function fmtPL(value: unknown, kind: string) {
   return fmtMoney(n)
 }
 
+function financeStudioMetric(
+  key: string,
+  label: string,
+  format: ChartStudioMetricDef['format'],
+  color: string,
+): ChartStudioMetricDef {
+  return { key, label, format, color }
+}
+
 export default function FinancePage() {
   const [data, setData] = useState<FinanceData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -207,7 +217,8 @@ export default function FinancePage() {
   const avgGrossSales = avg('gross_sales')
   const avgNetRevenue = avg('net_revenue')
   const avgGrossProfit = avg('gross_profit')
-  const avgMargin = last3.reduce((s, r) => s + (r.gross_margin_pct || 0), 0) / (last3.length || 1)
+  const marginValues = last3.map((r) => r.gross_margin_pct).filter((value): value is number => value != null)
+  const avgMargin = marginValues.length ? marginValues.reduce((sum, value) => sum + value, 0) / marginValues.length : null
   const insights = data.insights || {
     summary: {},
     monthly_intelligence: [],
@@ -224,6 +235,87 @@ export default function FinancePage() {
     net_profit: r.gross_profit,
     margin_pct: r.gross_margin_pct,
   }))
+  const perUnitChartData = perUnit.map((row) => ({
+    metric: perUnitLabels[row.metric] || row.metric,
+    amount: row.amount,
+  }))
+  const monthlyIntelligenceData = insights.monthly_intelligence.map((row) => ({ ...row }))
+  const financeChartDatasets: ChartStudioDataset[] = [
+    {
+      key: 'monthly-pl',
+      label: 'Monthly P&L',
+      subtitle: 'Gross sales, Amazon fees, FBA fees, and net after fees.',
+      xKey: 'month',
+      data: chartData,
+      metrics: [
+        financeStudioMetric('gross_sales', 'Gross Sales', 'money', '#B8D4AE'),
+        financeStudioMetric('amazon_fees', 'Amazon Fees', 'money', '#E67E22'),
+        financeStudioMetric('fba_fees', 'FBA Fees', 'money', '#C0392B'),
+        financeStudioMetric('net_profit', 'Net After Fees', 'money', '#2D4A27'),
+        financeStudioMetric('margin_pct', 'Fee-Adjusted Margin %', 'percent', '#275719'),
+      ],
+    },
+    {
+      key: 'monthly-intelligence',
+      label: 'Margin Pressure Trend',
+      subtitle: 'Fee load, refund rate, ad load, and ad-adjusted margin over time.',
+      xKey: 'month',
+      data: monthlyIntelligenceData,
+      metrics: [
+        financeStudioMetric('fee_load_pct', 'Fee Load %', 'percent', '#E67E22'),
+        financeStudioMetric('refund_rate_pct', 'Refund Rate %', 'percent', '#C0392B'),
+        financeStudioMetric('ad_load_pct', 'Ad Load %', 'percent', '#2980B9'),
+        financeStudioMetric('ad_adjusted_margin_pct', 'Ad-Adjusted Margin %', 'percent', '#2D4A27'),
+        financeStudioMetric('sales_mom_pct', 'Sales MoM %', 'percent', '#6B8F61'),
+      ],
+    },
+    {
+      key: 'streamlit-trends',
+      label: 'Streamlit Trend Modules',
+      subtitle: 'ASP, net sales, GP%, CM%, A&P%, and contribution margin trends.',
+      xKey: 'month',
+      data: calendarPL.map((row) => ({ ...row })),
+      metrics: [
+        financeStudioMetric('asp_per_unit', 'ASP / Unit', 'money2', '#2D4A27'),
+        financeStudioMetric('net_sales', 'Net Sales', 'money', '#2980B9'),
+        financeStudioMetric('gm_pct', 'GP %', 'percent', '#2D4A27'),
+        financeStudioMetric('cm_pct', 'CM %', 'percent', '#E67E22'),
+        financeStudioMetric('ap_pct', 'A&P %', 'percent', '#C0392B'),
+        financeStudioMetric('contribution_margin', 'Contribution Margin', 'money', '#275719'),
+      ],
+    },
+    {
+      key: 'per-unit-economics',
+      label: 'Per-Unit Economics',
+      subtitle: 'Per-unit P&L lines from gross sales through contribution margin.',
+      xKey: 'metric',
+      data: perUnitChartData,
+      metrics: [
+        financeStudioMetric('amount', 'Amount / Unit', 'money2', '#2D4A27'),
+      ],
+    },
+    {
+      key: 'settlement-summary',
+      label: 'Settlement Summary',
+      subtitle: 'Settlement volume, net revenue, fees, proceeds, and disbursed amounts.',
+      xKey: 'period',
+      data: settlementPL.map((row) => ({
+        period: String(row.period || row.group_id || '—'),
+        units: Number(row.units || 0),
+        net_revenue: Number(row.net_revenue || 0),
+        total_fees: Math.abs(Number(row.total_fees || 0)),
+        net_proceeds: Number(row.net_proceeds || 0),
+        disbursed: Number(row.disbursed || 0),
+      })),
+      metrics: [
+        financeStudioMetric('units', 'Units', 'number', '#6B8F61'),
+        financeStudioMetric('net_revenue', 'Net Revenue', 'money', '#2D4A27'),
+        financeStudioMetric('total_fees', 'Total Fees', 'money', '#C0392B'),
+        financeStudioMetric('net_proceeds', 'Net Proceeds', 'money', '#2980B9'),
+        financeStudioMetric('disbursed', 'Disbursed', 'money', '#AEA33C'),
+      ],
+    },
+  ].filter((dataset) => dataset.data.length > 0)
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -245,7 +337,7 @@ export default function FinancePage() {
             label="Avg Fee-Adjusted Margin"
             value={fmtPct(avgMargin)}
             sublabel="Before COGS"
-            status={avgMargin >= 20 ? 'normal' : avgMargin >= 10 ? 'warn' : 'alert'}
+            status={(avgMargin ?? 0) >= 20 ? 'normal' : (avgMargin ?? 0) >= 10 ? 'warn' : 'alert'}
           />
         </div>
 
@@ -605,6 +697,21 @@ export default function FinancePage() {
         </div>
       )}
       </ReportSlide>
+
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 12, padding: 16 }}>
+        <SectionHeader
+          title="Finance Custom Modules"
+          subtitle="Build reusable finance modules from monthly P&L, margin, settlement, and per-unit economics datasets."
+        />
+        <ChartStudio
+          datasets={financeChartDatasets}
+          storageKey="biohuez:finance-custom-chart-modules"
+          description="Build reusable finance chart cards from the monthly P&L, margin, settlement, and unit-economics datasets."
+          titlePlaceholder="Margin Pressure Story"
+          seedSuffix="Module"
+          reportSlidePrefix="Finance Custom Module"
+        />
+      </div>
     </div>
   )
 }

@@ -117,6 +117,8 @@ interface DemographicProfile {
   trend_periods?: ProfilePeriod[]
 }
 
+type ProfileGranularity = 'monthly' | 'weekly'
+
 interface CustomerInsights {
   summary: {
     latest_period?: string
@@ -374,8 +376,8 @@ export default function DemographicsPage() {
 
         <TabsContent value="profiles">
           <div className="dashboard-chart-grid">
-            <ProfilePanel title="Monthly Profile" profile={insights.profiles?.monthly} />
-            <ProfilePanel title="Weekly Profile" profile={insights.profiles?.weekly} />
+            <ProfilePanel title="Monthly Profile" granularity="monthly" rows={data?.demographics_monthly || []} fallbackProfile={insights.profiles?.monthly} />
+            <ProfilePanel title="Weekly Profile" granularity="weekly" rows={data?.demographics_weekly || []} fallbackProfile={insights.profiles?.weekly} />
           </div>
         </TabsContent>
 
@@ -514,7 +516,28 @@ const kpiLabels: [keyof ProfileKpis, string][] = [
   ['core_income_150_plus', 'Core Inc. $150k+'],
 ]
 
-function ProfilePanel({ title, profile }: { title: string; profile?: DemographicProfile }) {
+function ProfilePanel({
+  title,
+  granularity,
+  rows,
+  fallbackProfile,
+}: {
+  title: string
+  granularity: ProfileGranularity
+  rows: DemographicRow[]
+  fallbackProfile?: DemographicProfile
+}) {
+  const computed = buildProfileFromRows(rows, granularity)
+  const [periodA, setPeriodA] = useState<string>(computed?.previous_date || fallbackProfile?.previous_date || '')
+  const [periodB, setPeriodB] = useState<string>(computed?.latest_date || fallbackProfile?.latest_date || '')
+
+  useEffect(() => {
+    if (!computed) return
+    setPeriodA(computed.previous_date || computed.latest_date || '')
+    setPeriodB(computed.latest_date || '')
+  }, [granularity, rows.length])
+
+  const profile = buildProfileFromRows(rows, granularity, periodA, periodB) || fallbackProfile
   const hasProfile = Boolean(profile?.latest_kpis && profile?.comparison?.length)
   if (!hasProfile) {
     return (
@@ -530,6 +553,7 @@ function ProfilePanel({ title, profile }: { title: string; profile?: Demographic
   const topComparison = (profile?.comparison || []).slice(0, 10)
   const snapshot = (profile?.snapshot || []).filter(row => row.segment_name !== 'N/A').slice(0, 14)
   const trendRows = buildTrendRows(profile?.trend || [], profile?.trend_periods || [])
+  const availablePeriods = profile?.available_periods || []
 
   return (
     <div className="dashboard-card">
@@ -537,6 +561,39 @@ function ProfilePanel({ title, profile }: { title: string; profile?: Demographic
         title={title}
         subtitle={`${profile?.previous_label || 'Previous'} vs ${profile?.latest_label || 'Latest'}`}
       />
+
+      {availablePeriods.length > 1 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#667268', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Period A</span>
+            <select
+              value={periodA}
+              onChange={(event) => setPeriodA(event.target.value)}
+              style={{ minHeight: 36, borderRadius: 10, border: '1px solid rgba(34, 44, 38, 0.12)', padding: '0 10px', background: 'white' }}
+            >
+              {availablePeriods.map((period) => (
+                <option key={`${title}-a-${period.date}`} value={period.date}>
+                  {period.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#667268', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Period B</span>
+            <select
+              value={periodB}
+              onChange={(event) => setPeriodB(event.target.value)}
+              style={{ minHeight: 36, borderRadius: 10, border: '1px solid rgba(34, 44, 38, 0.12)', padding: '0 10px', background: 'white' }}
+            >
+              {availablePeriods.map((period) => (
+                <option key={`${title}-b-${period.date}`} value={period.date}>
+                  {period.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
 
       <div className="dashboard-kpi-grid-tight">
         <MetricCard label="Latest Customers" value={fmtNum(profile?.latest_customers)} sublabel={profile?.latest_label || 'Latest'} />
@@ -627,6 +684,151 @@ function ProfilePanel({ title, profile }: { title: string; profile?: Demographic
       </div>
     </div>
   )
+}
+
+function buildProfileFromRows(rows: DemographicRow[], granularity: ProfileGranularity, selectedA?: string, selectedB?: string): DemographicProfile | undefined {
+  if (!rows.length) return undefined
+
+  const normalized = rows
+    .filter((row) => row?.date)
+    .map((row) => ({
+      ...row,
+      customer_pct: Number(row.customer_pct || 0),
+      customer_count: Number(row.customer_count || 0),
+      units_ordered: Number(row.units_ordered || 0),
+      total_customers: Number(row.total_customers || 0),
+    }))
+
+  const dates = Array.from(new Set(normalized.map((row) => row.date))).sort()
+  if (!dates.length) return undefined
+
+  const labels = Object.fromEntries(dates.map((date) => [date, formatProfileDate(date, granularity)]))
+  const latestDate = selectedB && dates.includes(selectedB) ? selectedB : dates[dates.length - 1]
+  const previousDate = selectedA && dates.includes(selectedA) ? selectedA : (dates.length >= 2 ? dates[dates.length - 2] : latestDate)
+  const latest = normalized.filter((row) => row.date === latestDate)
+  const previous = normalized.filter((row) => row.date === previousDate)
+  const trendDates = dates.filter((date) => date <= latestDate).slice(-Math.min(3, dates.length))
+
+  const latestCustomers = maxCustomersForDate(latest)
+  const previousCustomers = maxCustomersForDate(previous)
+  const comparison = buildProfileComparison(normalized, previousDate, latestDate)
+
+  return {
+    available_periods: dates.map((date) => ({ date, label: labels[date] })),
+    latest_date: latestDate,
+    latest_label: labels[latestDate],
+    previous_date: previousDate,
+    previous_label: labels[previousDate],
+    latest_customers: latestCustomers,
+    previous_customers: previousCustomers,
+    customer_delta: latestCustomers - previousCustomers,
+    customer_delta_pct: previousCustomers ? ((latestCustomers - previousCustomers) / previousCustomers) * 100 : null,
+    latest_kpis: profileKpisForRows(latest, labels[latestDate]),
+    alltime_kpis: allTimeProfileKpis(normalized, `${labels[dates[0]]} - ${labels[dates[dates.length - 1]]}`),
+    comparison,
+    snapshot: latest.sort((a, b) => a.category_type.localeCompare(b.category_type) || b.customer_pct - a.customer_pct),
+    trend: normalized.filter((row) => trendDates.includes(row.date)).sort((a, b) => a.category_type.localeCompare(b.category_type) || a.segment_name.localeCompare(b.segment_name) || a.date.localeCompare(b.date)),
+    trend_periods: trendDates.map((date) => ({ date, label: labels[date] })),
+  }
+}
+
+function formatProfileDate(value: string, granularity: ProfileGranularity) {
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10)
+  return granularity === 'monthly'
+    ? date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function maxCustomersForDate(rows: DemographicRow[]) {
+  return rows.reduce((max, row) => Math.max(max, Number(row.total_customers || 0), Number(row.customer_count || 0)), 0)
+}
+
+function segmentPct(rows: DemographicRow[], category: string, segment: string) {
+  const filtered = rows.filter((row) => row.category_type === category && row.segment_name === segment)
+  if (!filtered.length) return 0
+  return filtered.reduce((sum, row) => sum + Number(row.customer_pct || 0), 0) / filtered.length
+}
+
+function combinedPct(rows: DemographicRow[], category: string, segments: string[]) {
+  const filtered = rows.filter((row) => row.category_type === category && segments.includes(row.segment_name))
+  if (!filtered.length) return 0
+  return filtered.reduce((sum, row) => sum + Number(row.customer_pct || 0), 0)
+}
+
+function weightedSegmentPct(rows: DemographicRow[], category: string, segment: string) {
+  const filtered = rows.filter((row) => row.category_type === category && row.segment_name === segment)
+  if (!filtered.length) return 0
+  const weighted = filtered.reduce((sum, row) => sum + Number(row.customer_pct || 0) * Number(row.total_customers || 0), 0)
+  const totalWeight = filtered.reduce((sum, row) => sum + Number(row.total_customers || 0), 0)
+  return totalWeight > 0 ? weighted / totalWeight : segmentPct(filtered, category, segment)
+}
+
+function weightedCombinedPct(rows: DemographicRow[], category: string, segments: string[]) {
+  const dates = Array.from(new Set(rows.filter((row) => row.category_type === category).map((row) => row.date)))
+  if (!dates.length) return 0
+  const values = dates.map((date) => {
+    const scoped = rows.filter((row) => row.date === date && row.category_type === category)
+    return {
+      value: scoped.filter((row) => segments.includes(row.segment_name)).reduce((sum, row) => sum + Number(row.customer_pct || 0), 0),
+      weight: maxCustomersForDate(scoped),
+    }
+  })
+  const totalWeight = values.reduce((sum, item) => sum + item.weight, 0)
+  return totalWeight > 0
+    ? values.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight
+    : values.reduce((sum, item) => sum + item.value, 0) / values.length
+}
+
+function profileKpisForRows(rows: DemographicRow[], label: string): ProfileKpis {
+  return {
+    label,
+    female: segmentPct(rows, 'gender', 'Female'),
+    age_35_44: segmentPct(rows, 'age_group', '35-44'),
+    core_age_45_plus: combinedPct(rows, 'age_group', ['45-54', '55-64', '65+']),
+    income_100_125: segmentPct(rows, 'household_income', '$100k+'),
+    income_125_150: segmentPct(rows, 'household_income', '$125k+'),
+    core_income_150_plus: combinedPct(rows, 'household_income', ['$150k+', '$175k+', '$200k+', '$250k+']),
+  }
+}
+
+function allTimeProfileKpis(rows: DemographicRow[], label: string): ProfileKpis {
+  return {
+    label,
+    female: weightedSegmentPct(rows, 'gender', 'Female'),
+    age_35_44: weightedSegmentPct(rows, 'age_group', '35-44'),
+    core_age_45_plus: weightedCombinedPct(rows, 'age_group', ['45-54', '55-64', '65+']),
+    income_100_125: weightedSegmentPct(rows, 'household_income', '$100k+'),
+    income_125_150: weightedSegmentPct(rows, 'household_income', '$125k+'),
+    core_income_150_plus: weightedCombinedPct(rows, 'household_income', ['$150k+', '$175k+', '$200k+', '$250k+']),
+  }
+}
+
+function buildProfileComparison(rows: DemographicRow[], dateA: string, dateB: string): ProfileComparisonRow[] {
+  const aRows = rows.filter((row) => row.date === dateA)
+  const bRows = rows.filter((row) => row.date === dateB)
+  const keys = Array.from(new Set([...aRows, ...bRows].map((row) => `${row.category_type}||${row.segment_name}`)))
+  return keys
+    .map((key) => {
+      const [category_type, segment_name] = key.split('||')
+      const a = aRows.filter((row) => row.category_type === category_type && row.segment_name === segment_name)
+      const b = bRows.filter((row) => row.category_type === category_type && row.segment_name === segment_name)
+      const periodA_pct = a.length ? a.reduce((sum, row) => sum + Number(row.customer_pct || 0), 0) / a.length : 0
+      const periodB_pct = b.length ? b.reduce((sum, row) => sum + Number(row.customer_pct || 0), 0) / b.length : 0
+      const periodA_customers = a.reduce((sum, row) => sum + Number(row.customer_count || 0), 0)
+      const periodB_customers = b.reduce((sum, row) => sum + Number(row.customer_count || 0), 0)
+      return {
+        category_type,
+        segment_name,
+        period_a_pct: periodA_pct,
+        period_b_pct: periodB_pct,
+        delta_pct: periodB_pct - periodA_pct,
+        period_a_customers: periodA_customers,
+        period_b_customers: periodB_customers,
+        delta_customers: periodB_customers - periodA_customers,
+      }
+    })
+    .sort((left, right) => Math.abs(right.delta_pct) - Math.abs(left.delta_pct))
 }
 
 function ProfileKpiGrid({ kpis }: { kpis?: ProfileKpis }) {

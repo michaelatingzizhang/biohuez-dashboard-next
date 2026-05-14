@@ -7,6 +7,7 @@ import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import { ReportSlide } from '@/components/report-slide'
+import { ChartStudio, type ChartStudioDataset, type ChartStudioMetricDef } from '@/components/sales-chart-studio'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -230,6 +231,15 @@ const SKU_COLORS: Record<string, string> = {
   'ZH-FH-3C': '#8B4513',
 }
 
+function inventoryStudioMetric(
+  key: string,
+  label: string,
+  format: ChartStudioMetricDef['format'],
+  color: string,
+): ChartStudioMetricDef {
+  return { key, label, format, color }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
@@ -369,6 +379,74 @@ export default function InventoryPage() {
   const recentReceipts = receipts
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 30)
+  const inventoryChartDatasets: ChartStudioDataset[] = [
+    {
+      key: 'coverage-by-sku',
+      label: 'Coverage by SKU',
+      subtitle: 'Days of supply, weeks of cover, and sell-through by SKU.',
+      xKey: 'sku',
+      data: coverageData.map((row) => ({ ...row })),
+      metrics: [
+        inventoryStudioMetric('dos_total', 'Total DOS', 'number', '#2D4A27'),
+        inventoryStudioMetric('weeks_t30', 'Weeks Cover T30', 'number', '#6B8F61'),
+        inventoryStudioMetric('weeks_t90', 'Weeks Cover T90', 'number', '#2980B9'),
+        inventoryStudioMetric('sell_through', 'Sell Through', 'number', '#AEA33C'),
+        inventoryStudioMetric('units_t30', 'Units T30', 'number', '#C0392B'),
+      ],
+    },
+    {
+      key: 'aging-exposure',
+      label: 'Aging Exposure',
+      subtitle: 'Inventory aging buckets by SKU.',
+      xKey: 'sku',
+      data: agingData.map((row) => ({ ...row })),
+      metrics: [
+        inventoryStudioMetric('0-30d', '0-30d', 'number', '#B8D4AE'),
+        inventoryStudioMetric('31-60d', '31-60d', 'number', '#6B8F61'),
+        inventoryStudioMetric('91-180d', '91-180d', 'number', '#E67E22'),
+        inventoryStudioMetric('181-330d', '181-330d', 'number', '#C0392B'),
+        inventoryStudioMetric('366d+', '366d+', 'number', '#7F1D1D'),
+      ],
+    },
+    {
+      key: 'fc-distribution',
+      label: 'FC Distribution',
+      subtitle: 'Inventory concentration across fulfillment centers.',
+      xKey: 'fc',
+      data: fcChartData.map((row) => ({ ...row })),
+      metrics: [
+        inventoryStudioMetric('total', 'Total Units', 'number', '#2D4A27'),
+        ...skus.map((sku, index) => inventoryStudioMetric(shortSku(sku), shortSku(sku), 'number', Object.values(SKU_COLORS)[index % Object.values(SKU_COLORS).length] || '#6B8F61')),
+      ],
+    },
+    {
+      key: 'sku-risk',
+      label: 'SKU Risk',
+      subtitle: 'Risk score, coverage, velocity, and aging for priority SKUs.',
+      xKey: 'sku',
+      data: insights.sku_risks.map((row) => ({ ...row })),
+      metrics: [
+        inventoryStudioMetric('risk_score', 'Risk Score', 'number', '#C0392B'),
+        inventoryStudioMetric('days_of_supply', 'Days of Supply', 'number', '#2D4A27'),
+        inventoryStudioMetric('daily_velocity', 'Daily Velocity', 'number', '#6B8F61'),
+        inventoryStudioMetric('old_units', 'Old Units', 'number', '#E67E22'),
+        inventoryStudioMetric('storage_cost_next_month', 'Storage Cost', 'money', '#2980B9'),
+      ],
+    },
+    {
+      key: 'movement-anomalies',
+      label: 'Movement Watchlist',
+      subtitle: 'Shipped, received, and balance delta by monthly anomaly row.',
+      xKey: 'month',
+      data: insights.movement_anomalies.map((row) => ({ ...row })),
+      metrics: [
+        inventoryStudioMetric('shipped_units', 'Shipped', 'number', '#2D4A27'),
+        inventoryStudioMetric('received_units', 'Received', 'number', '#6B8F61'),
+        inventoryStudioMetric('balance_delta', 'Balance Delta', 'number', '#C0392B'),
+        inventoryStudioMetric('ending_balance', 'Ending Balance', 'number', '#2980B9'),
+      ],
+    },
+  ].filter((dataset) => dataset.data.length > 0)
 
   return (
       <div style={{ paddingBottom: 40 }}>
@@ -837,6 +915,21 @@ export default function InventoryPage() {
         )}
       </div>
       </ReportSlide>
+
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 12, padding: 16 }}>
+        <SectionHeader
+          title="Inventory Custom Modules"
+          subtitle="Build reusable inventory modules from coverage, aging, FC concentration, and movement datasets."
+        />
+        <ChartStudio
+          datasets={inventoryChartDatasets}
+          storageKey="biohuez:inventory-custom-chart-modules"
+          description="Build reusable inventory chart cards from coverage, aging, FC distribution, risk, and movement datasets."
+          titlePlaceholder="Coverage Story"
+          seedSuffix="Module"
+          reportSlidePrefix="Inventory Custom Module"
+        />
+      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 import { LoadingSkeleton } from '@/components/loading-skeleton'
 
-import { type DragEvent, type ReactNode, useEffect, useState } from 'react'
+import { type DragEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MetricCard } from '@/components/metric-card'
 import { SectionHeader } from '@/components/section-header'
@@ -10,6 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, useDashboardFilters } from '@/components/dashboard-filters'
 import { ReportSlide } from '@/components/report-slide'
+import { SalesChartStudio, type ChartStudioDataset, type ChartStudioMetricDef } from '@/components/sales-chart-studio'
+import { buildReportSlideKey, isCustomModuleSlideKey } from '@/lib/report-library'
 import { cn } from '@/lib/utils'
 import {
   DndContext,
@@ -53,6 +55,27 @@ const AD_TYPE_LABELS: Record<string, string> = {
 }
 const SALES_VIEW_STORAGE_KEY = 'biohuez:sales-view'
 const ARTWORK_CHANGE_DATE = '2026-04-15'
+const SALES_REPORT_TAB_BY_SLIDE_KEY: Record<string, string> = {
+  [buildReportSlideKey('Sales KPI Widgets')]: 'overview',
+  [buildReportSlideKey('Sales Performance Trend')]: 'overview',
+  [buildReportSlideKey('SKU Performance')]: 'overview',
+  [buildReportSlideKey('SKU Time Series')]: 'time-series',
+  [buildReportSlideKey('Sales Mix Intelligence')]: 'intelligence',
+  [buildReportSlideKey('Traffic And Session Quality')]: 'traffic',
+  [buildReportSlideKey('BSR Rank')]: 'bsr',
+  [buildReportSlideKey('Advertising Efficiency')]: 'ads',
+  [buildReportSlideKey('Unit Economics')]: 'unit-economics',
+  [buildReportSlideKey('Customer Journey')]: 'customer-journey',
+}
+
+function studioMetric(
+  key: string,
+  label: string,
+  format: ChartStudioMetricDef['format'],
+  color: string,
+): ChartStudioMetricDef {
+  return { key, label, format, color }
+}
 
 interface SalesRow {
   date: string
@@ -561,6 +584,21 @@ export default function SalesPage() {
   const filters = useDashboardFilters()
   const params = useSearchParams()
   const comparisonActive = params.get('compare') === 'previous'
+  const requestedReportSlide = params.get('reportSlide')
+  const [activeTab, setActiveTab] = useState(() => {
+    if (isCustomModuleSlideKey(requestedReportSlide)) return 'custom-studio'
+    return SALES_REPORT_TAB_BY_SLIDE_KEY[requestedReportSlide || ''] || 'overview'
+  })
+
+  useEffect(() => {
+    if (!requestedReportSlide) return
+    if (isCustomModuleSlideKey(requestedReportSlide)) {
+      setActiveTab('custom-studio')
+      return
+    }
+    const mappedTab = SALES_REPORT_TAB_BY_SLIDE_KEY[requestedReportSlide]
+    if (mappedTab) setActiveTab(mappedTab)
+  }, [requestedReportSlide])
 
   useEffect(() => {
     fetch('/api/sales')
@@ -731,11 +769,11 @@ export default function SalesPage() {
     }))
   const unitEconByDate: Record<string, {
     adSales: number; adUnits: number; adSpend: number; adOrders: number;
-    totalRevenue: number; totalUnits: number;
+    totalRevenue: number; totalUnits: number; totalOrders: number;
   }> = {}
   for (const row of ads) {
     const d = row.date?.slice(0, 10) || ''
-    if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0 }
+    if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0, totalOrders: 0 }
     unitEconByDate[d].adSales += row.sales_1d || 0
     unitEconByDate[d].adUnits += row.purchases_1d || 0
     unitEconByDate[d].adSpend += row.spend || 0
@@ -743,9 +781,10 @@ export default function SalesPage() {
   }
   for (const row of sales) {
     const d = row.date?.slice(0, 10) || ''
-    if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0 }
+    if (!unitEconByDate[d]) unitEconByDate[d] = { adSales: 0, adUnits: 0, adSpend: 0, adOrders: 0, totalRevenue: 0, totalUnits: 0, totalOrders: 0 }
     unitEconByDate[d].totalRevenue += row.revenue || 0
     unitEconByDate[d].totalUnits += row.units || 0
+    unitEconByDate[d].totalOrders += row.orders || 0
   }
 
   const totalAdOrders = ads.reduce((s, r) => s + (r.purchases_1d || 0), 0)
@@ -753,8 +792,8 @@ export default function SalesPage() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => ({
       date,
-      pROAS: v.adSpend > 0 ? parseFloat(((v.adSales - 4.93 * v.adUnits) / v.adSpend).toFixed(3)) : null,
-      blendedPROAS: v.adSpend > 0 ? parseFloat(((v.totalRevenue - 4.93 * v.totalUnits) / v.adSpend).toFixed(3)) : null,
+      pROAS: v.adSpend > 0 ? parseFloat(((v.adSales - 4.93 * v.adOrders) / v.adSpend).toFixed(3)) : null,
+      blendedPROAS: v.adSpend > 0 ? parseFloat(((v.totalRevenue - 4.93 * v.totalOrders) / v.adSpend).toFixed(3)) : null,
     }))
 
   const cacChartData = Object.entries(unitEconByDate)
@@ -762,8 +801,16 @@ export default function SalesPage() {
     .map(([date, v]) => ({
       date,
       CAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
-      blendedCAC: v.adOrders > 0 ? parseFloat((v.adSpend / v.adOrders).toFixed(2)) : null,
+      blendedCAC: v.totalOrders > 0 ? parseFloat((v.adSpend / v.totalOrders).toFixed(2)) : null,
     }))
+  const unitEconomicsStudioData = proasChartData.map((row) => {
+    const matchingCac = cacChartData.find((item) => item.date === row.date)
+    return {
+      ...row,
+      CAC: matchingCac?.CAC ?? null,
+      blendedCAC: matchingCac?.blendedCAC ?? null,
+    }
+  })
   function buildOverviewKpis(periodSales: SalesRow[], periodAds: AdsRow[], sublabel?: string): SalesKpiItem[] {
     const revenue = periodSales.reduce((s, r) => s + (r.revenue || 0), 0)
     const orders = periodSales.reduce((s, r) => s + (r.orders || 0), 0)
@@ -774,7 +821,7 @@ export default function SalesPage() {
     const periodAov = orders > 0 ? revenue / orders : 0
     const periodAcos = adSales > 0 ? adSpend / adSales * 100 : 0
     const periodRoas = adSpend > 0 ? adSales / adSpend : 0
-    const periodProas = adSpend > 0 ? (adSales - 4.93 * units) / adSpend : 0
+    const periodProas = adSpend > 0 ? (adSales - 4.93 * adOrders) / adSpend : 0
     const periodAsp = units > 0 ? revenue / units : 0
     const periodCac = adOrders > 0 ? adSpend / adOrders : 0
     const periodOrganicSalesPct = revenue > 0 ? (revenue - adSales) / revenue * 100 : 0
@@ -921,6 +968,103 @@ export default function SalesPage() {
     repeat_revenue: r.repeat_revenue || 0,
     repeat_pct: r.repeat_rate || 0,
   }))
+
+  const customChartDatasets: ChartStudioDataset[] = [
+    {
+      key: 'sales-overview',
+      label: 'Sales Overview',
+      subtitle: 'Revenue, ASP, ad spend, and BSR over time.',
+      xKey: 'date',
+      xTickFormatter: formatChartDate,
+      data: overviewChartData,
+      metrics: [
+        studioMetric('total', 'Sales', 'money', '#2D4A27'),
+        studioMetric('asp', 'ASP', 'money2', '#6B8F61'),
+        studioMetric('adSpend', 'Ad Spend', 'money', '#AEA33C'),
+        studioMetric('bestBsr', 'Best BSR', 'rank', '#C0392B'),
+      ],
+    },
+    {
+      key: 'traffic-quality',
+      label: 'Traffic Quality',
+      subtitle: 'Sessions, clicks, CVR, and ad spend over time.',
+      xKey: 'date',
+      xTickFormatter: formatChartDate,
+      data: trafficSeries,
+      metrics: [
+        studioMetric('sessions', 'Sessions', 'number', '#2D4A27'),
+        studioMetric('clicks', 'Clicks', 'number', '#5A774C'),
+        studioMetric('cvr', 'CVR', 'percent', '#E67E22'),
+        studioMetric('adSpend', 'Ad Spend', 'money', '#AEA33C'),
+        studioMetric('sessionsPerClick', 'Sessions / Click', 'ratio', '#2980B9'),
+      ],
+    },
+    {
+      key: 'weekly-momentum',
+      label: 'Weekly Momentum',
+      subtitle: 'Weekly revenue, units, ad spend, ACOS, and ad sales share.',
+      xKey: 'week',
+      xTickFormatter: (value: unknown) => String(value || '').slice(5),
+      data: insights.weekly_trend.map((row) => ({ ...row })),
+      metrics: [
+        studioMetric('revenue', 'Revenue', 'money', '#2D4A27'),
+        studioMetric('units', 'Units', 'number', '#6B8F61'),
+        studioMetric('ad_spend', 'Ad Spend', 'money', '#E67E22'),
+        studioMetric('acos', 'ACOS', 'percent', '#C0392B'),
+        studioMetric('ad_sales_share_pct', 'Ad Sales Share', 'percent', '#2980B9'),
+      ],
+    },
+    {
+      key: 'unit-economics',
+      label: 'Unit Economics',
+      subtitle: 'pROAS, blended pROAS, CAC, and blended CAC over time.',
+      xKey: 'date',
+      xTickFormatter: (value: unknown) => String(value || '').slice(5),
+      data: unitEconomicsStudioData,
+      metrics: [
+        studioMetric('pROAS', 'pROAS', 'ratio', '#6B8F61'),
+        studioMetric('blendedPROAS', 'Blended pROAS', 'ratio', '#2D4A27'),
+        studioMetric('CAC', 'CAC', 'money2', '#E67E22'),
+        studioMetric('blendedCAC', 'Blended CAC', 'money2', '#2980B9'),
+      ],
+    },
+    {
+      key: 'customer-journey',
+      label: 'Customer Journey',
+      subtitle: 'New versus repeat customer and revenue mix over time.',
+      xKey: 'period',
+      data: customerChartData,
+      metrics: [
+        studioMetric('new_revenue', 'New Revenue', 'money', '#E67E22'),
+        studioMetric('repeat_revenue', 'Repeat Revenue', 'money', '#2D4A27'),
+        studioMetric('new_customers', 'New Customers', 'number', '#B8D4AE'),
+        studioMetric('repeat_customers', 'Repeat Customers', 'number', '#5A774C'),
+        studioMetric('repeat_pct', 'Repeat Rate', 'percent', '#AEA33C'),
+      ],
+    },
+    {
+      key: 'sku-performance',
+      label: 'SKU Performance',
+      subtitle: 'Revenue, orders, units, and ASP by SKU.',
+      xKey: 'sku',
+      data: skuPerf.map((row) => ({
+        sku: skuLabel(row.sku),
+        revenue: row.revenue,
+        orders: row.orders,
+        units: row.units,
+        asp: row.asp,
+        aov: row.aov,
+        adSalesPct: row.adSalesPct,
+      })),
+      metrics: [
+        studioMetric('revenue', 'Revenue', 'money', '#2D4A27'),
+        studioMetric('orders', 'Orders', 'number', '#6B8F61'),
+        studioMetric('units', 'Units', 'number', '#B8D4AE'),
+        studioMetric('asp', 'ASP', 'money2', '#E67E22'),
+        studioMetric('adSalesPct', 'Ad Sales %', 'percent', '#2980B9'),
+      ],
+    },
+  ].filter((dataset) => dataset.data.length > 0)
 
   function chartSubtitle(chartData: Array<Record<string, unknown>>) {
     const points = chartData.filter(row => Number(row.total || 0) > 0)
@@ -1121,7 +1265,7 @@ export default function SalesPage() {
 
   return (
     <div style={{ padding: '0 0 40px' }}>
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="dashboard-tabs-scroll">
           <TabsList style={{ marginBottom: 20, background: '#F0F0F0' }}>
             <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -1131,6 +1275,8 @@ export default function SalesPage() {
             <TabsTrigger value="bsr">BSR</TabsTrigger>
             <TabsTrigger value="ads">Ads</TabsTrigger>
             <TabsTrigger value="unit-economics">Unit Economics</TabsTrigger>
+            <TabsTrigger value="customer-journey">Customer Journey</TabsTrigger>
+            <TabsTrigger value="custom-studio">Custom Studio</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1678,7 +1824,7 @@ export default function SalesPage() {
             action="Use this slide to connect sales growth to contribution economics."
           >
           <div className="dashboard-kpi-grid">
-            <MetricCard label="pROAS (All)" value={totalAdSpend > 0 ? ((totalAdSales - 4.93 * totalUnits) / totalAdSpend).toFixed(2) + 'x' : '—'} />
+            <MetricCard label="pROAS (All)" value={totalAdSpend > 0 ? ((totalAdSales - 4.93 * totalAdOrders) / totalAdSpend).toFixed(2) + 'x' : '—'} />
             <MetricCard label="CAC (Ad)" value={totalAdOrders > 0 ? fmtMoney2(totalAdSpend / totalAdOrders) : '—'} />
             <MetricCard label="Ad Units" value={fmt(totalAdOrders)} />
           </div>
@@ -1805,6 +1951,15 @@ export default function SalesPage() {
             </>
           )}
           </ReportSlide>
+        </TabsContent>
+        <TabsContent value="custom-studio">
+          <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 12, padding: 16 }}>
+            <SectionHeader
+              title="Custom Chart Modules"
+              subtitle="Build reusable sales modules from overview, traffic, momentum, unit economics, customer, and SKU datasets."
+            />
+            <SalesChartStudio datasets={customChartDatasets} />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

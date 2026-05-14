@@ -8,6 +8,7 @@ import { SectionHeader } from '@/components/section-header'
 import { SignalGrid } from '@/components/insight-card'
 import { filterByDashboardState, hasActiveDashboardFilters, useDashboardFilters } from '@/components/dashboard-filters'
 import { ReportSlide } from '@/components/report-slide'
+import { ChartStudio, type ChartStudioDataset, type ChartStudioMetricDef } from '@/components/sales-chart-studio'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 const SKU_COLORS: Record<string, string> = {
@@ -97,6 +98,15 @@ function riskBg(status: SkuRiskRow['status']) {
   return '#EEF6EC'
 }
 
+function returnsStudioMetric(
+  key: string,
+  label: string,
+  format: ChartStudioMetricDef['format'],
+  color: string,
+): ChartStudioMetricDef {
+  return { key, label, format, color }
+}
+
 export default function ReturnsPage() {
   const [data, setData] = useState<ReturnsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -155,7 +165,8 @@ export default function ReturnsPage() {
   const returnRate = totalUnitsSold > 0 ? (totalReturns / totalUnitsSold * 100) : 0
   const topReason = reasons.length > 0 ? reasons[0].reason : 'N/A'
   // Refund impact — approximate at $15.59/unit
-  const refundImpact = insights.summary.estimated_refund_impact || totalReturns * 15.59
+  const avgRefundValue = insights.summary.avg_refund_value ?? 15.59
+  const refundImpact = insights.summary.estimated_refund_impact ?? (totalReturns * avgRefundValue)
 
   // Time series: pivot by sku
   const skus = Array.from(new Set(time_series.map(r => r.sku_name))).sort()
@@ -171,6 +182,72 @@ export default function ReturnsPage() {
   // Augment by_sku with units sold and return rate
   const unitsMap: Record<string, number> = {}
   for (const u of units_by_sku) unitsMap[u.sku_name] = u.units_sold
+  const returnsChartDatasets: ChartStudioDataset[] = [
+    {
+      key: 'returns-time-series',
+      label: 'Returns Over Time',
+      subtitle: 'Return counts over time by SKU.',
+      xKey: 'date',
+      xTickFormatter: (value: unknown) => String(value || '').slice(5),
+      data: tsChartData.map((row) => ({ ...row })),
+      metrics: skus.map((sku, index) => returnsStudioMetric(sku, sku, 'number', Object.values(SKU_COLORS)[index % Object.values(SKU_COLORS).length] || '#2D4A27')),
+    },
+    {
+      key: 'sku-risk',
+      label: 'SKU Return Risk',
+      subtitle: 'Return risk, rate, refund impact, and volume by SKU.',
+      xKey: 'sku_name',
+      data: insights.sku_risks.map((row) => ({ ...row })),
+      metrics: [
+        returnsStudioMetric('return_rate_pct', 'Return Rate', 'percent', '#C0392B'),
+        returnsStudioMetric('estimated_refund_impact', 'Refund Impact', 'money', '#2D4A27'),
+        returnsStudioMetric('total_returns', 'Returns', 'number', '#6B8F61'),
+        returnsStudioMetric('units_sold', 'Units Sold', 'number', '#2980B9'),
+        returnsStudioMetric('risk_score', 'Risk Score', 'number', '#AEA33C'),
+      ],
+    },
+    {
+      key: 'reason-clusters',
+      label: 'Reason Clusters',
+      subtitle: 'Grouped return reasons by count and share.',
+      xKey: 'category',
+      data: insights.reason_clusters.map((row) => ({ ...row })),
+      metrics: [
+        returnsStudioMetric('returns', 'Returns', 'number', '#2D4A27'),
+        returnsStudioMetric('share_pct', 'Share', 'percent', '#6B8F61'),
+      ],
+    },
+    {
+      key: 'monthly-trend',
+      label: 'Monthly Return Trend',
+      subtitle: 'Monthly return volume trend.',
+      xKey: 'month',
+      data: insights.monthly_trend.map((row) => ({ ...row })),
+      metrics: [
+        returnsStudioMetric('returns', 'Returns', 'number', '#2D4A27'),
+      ],
+    },
+    {
+      key: 'returns-by-sku',
+      label: 'Returns by SKU',
+      subtitle: 'Returns, units sold, and return rate by SKU.',
+      xKey: 'sku_name',
+      data: by_sku.map((row) => {
+        const unitsSold = unitsMap[row.sku_name] || 0
+        return {
+          sku_name: row.sku_name,
+          total_returns: row.total_returns,
+          units_sold: unitsSold,
+          return_rate_pct: unitsSold > 0 ? (row.total_returns / unitsSold) * 100 : null,
+        }
+      }),
+      metrics: [
+        returnsStudioMetric('total_returns', 'Returns', 'number', '#2D4A27'),
+        returnsStudioMetric('units_sold', 'Units Sold', 'number', '#6B8F61'),
+        returnsStudioMetric('return_rate_pct', 'Return Rate', 'percent', '#C0392B'),
+      ],
+    },
+  ].filter((dataset) => dataset.data.length > 0)
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -188,7 +265,7 @@ export default function ReturnsPage() {
         <MetricCard label="Total Returns" value={fmtNum(insights.summary.total_returns || totalReturns)} sublabel={`${returns.length} return events`} />
         <MetricCard label="Return Rate" value={fmtPct(insights.summary.overall_return_rate_pct ?? returnRate)} sublabel={`vs ${fmtNum(insights.summary.total_units_sold || totalUnitsSold)} units sold`} status={(insights.summary.overall_return_rate_pct ?? returnRate) > 5 ? 'alert' : (insights.summary.overall_return_rate_pct ?? returnRate) > 2 ? 'warn' : 'normal'} />
         <MetricCard label="Top Return Reason" value={(insights.summary.top_reason || topReason).replace(/_/g, ' ')} sublabel={fmtPct(insights.summary.top_reason_share_pct) + ' of returns'} />
-        <MetricCard label="Est. Refund Impact" value={fmtMoney(refundImpact)} sublabel={`At avg ${fmtMoney(insights.summary.avg_refund_value)}/unit`} status="warn" />
+        <MetricCard label="Est. Refund Impact" value={fmtMoney(refundImpact)} sublabel={`At avg ${fmtMoney(avgRefundValue)}/unit`} status="warn" />
       </div>
 
       <SectionHeader title="Returns Intelligence" subtitle="Return rate, SKU risk, reason concentration, and recommended next actions" />
@@ -454,6 +531,21 @@ export default function ReturnsPage() {
         </table>
       </div>
       </ReportSlide>
+
+      <div className="dashboard-chart-card" style={{ background: 'white', borderRadius: 12, padding: 16 }}>
+        <SectionHeader
+          title="Returns Custom Modules"
+          subtitle="Build reusable returns modules from timing, SKU risk, reason clusters, and monthly trend datasets."
+        />
+        <ChartStudio
+          datasets={returnsChartDatasets}
+          storageKey="biohuez:returns-custom-chart-modules"
+          description="Build reusable returns chart cards from time series, SKU risk, reason, and trend datasets."
+          titlePlaceholder="Return Risk Story"
+          seedSuffix="Module"
+          reportSlidePrefix="Returns Custom Module"
+        />
+      </div>
     </div>
   )
 }

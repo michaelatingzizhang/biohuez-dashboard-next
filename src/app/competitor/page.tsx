@@ -104,8 +104,8 @@ interface CompetitorInsights {
 interface CompetitorData {
   competitor: CompetitorRow[]
   bsr: BsrRow[]
-  item_comparison: unknown[]
-  alt_purchase: unknown[]
+  item_comparison: Record<string, unknown>[]
+  alt_purchase: Record<string, unknown>[]
   competitor_reviews: ReviewRow[]
   insights?: CompetitorInsights
   error?: string
@@ -590,9 +590,11 @@ export default function CompetitorPage() {
               variant="info"
             />
           ) : (
-            <div style={{ background: 'white', borderRadius: 10, padding: 16, color: '#2D4A27' }}>
-              {JSON.stringify(data.item_comparison.slice(0, 5))}
-            </div>
+            <DynamicAnalyticsTable
+              title="Item Comparison"
+              subtitle="Brand Analytics viewed-before-purchase comparison rows"
+              rows={data.item_comparison}
+            />
           )}
         </TabsContent>
 
@@ -604,12 +606,70 @@ export default function CompetitorPage() {
               variant="info"
             />
           ) : (
-            <div style={{ background: 'white', borderRadius: 10, padding: 16, color: '#2D4A27' }}>
-              {JSON.stringify(data.alt_purchase.slice(0, 5))}
-            </div>
+            <DynamicAnalyticsTable
+              title="Alternate Purchase"
+              subtitle="Brand Analytics alternate-purchase rows"
+              rows={data.alt_purchase}
+            />
           )}
         </TabsContent>
       </Tabs>
     </div>
   )
+}
+
+function DynamicAnalyticsTable({
+  title,
+  subtitle,
+  rows,
+}: {
+  title: string
+  subtitle: string
+  rows: Record<string, unknown>[]
+}) {
+  const columns = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row).forEach((key) => set.add(key))
+      return set
+    }, new Set<string>()),
+  )
+
+  return (
+    <>
+      <SectionHeader title={title} subtitle={subtitle} />
+      <div style={{ background: 'white', borderRadius: 10, padding: 16, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', minWidth: Math.max(720, columns.length * 120) }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #EBEBEB' }}>
+              {columns.map((column) => (
+                <th
+                  key={column}
+                  style={{ padding: '8px 10px', textAlign: 'left', color: '#666', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase' }}
+                >
+                  {column.replace(/_/g, ' ')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={`${title}-${rowIndex}`} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                {columns.map((column) => (
+                  <td key={`${rowIndex}-${column}`} style={{ padding: '8px 10px', color: '#2D4A27' }}>
+                    {formatCellValue(row[column])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
+
+function formatCellValue(value: unknown) {
+  if (value == null || value === '') return '—'
+  if (typeof value === 'number') return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return String(value)
 }

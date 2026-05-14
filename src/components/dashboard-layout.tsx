@@ -10,6 +10,8 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   DollarSign,
   GitMerge,
   Home,
@@ -29,12 +31,13 @@ import {
 } from "lucide-react";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import {
+  ReportSlideNav,
   ReportSlideSidebar,
   ReportSlideSorter,
   useReportSlideDeckWithPaging,
 } from "@/components/report-slide-deck";
 import { buildGlobalReportSlideId } from "@/lib/report-library";
-import { readSavedReportDeck } from "@/lib/report-deck-storage";
+import { readActiveReportPresetName, readSavedReportDeck } from "@/lib/report-deck-storage";
 
 const navItems = [
   { icon: Home, label: "Summary", href: "/", priority: 1, preview: "/page-previews/summary.png" },
@@ -98,6 +101,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [previewNav, setPreviewNav] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [theme, setTheme] = useState(DEFAULT_THEME);
+  const [topbarCollapsed, setTopbarCollapsed] = useState(false);
   const pathname = usePathname();
   const activeNav = getActiveNav(pathname);
   const activeIndex = Math.max(0, navItems.findIndex(item => item.label === activeNav));
@@ -117,10 +121,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const requestedSlideKey = reportQuery.reportSlide;
   const reportDeckMode = reportQuery.reportDeck;
   const [savedDeck, setSavedDeck] = useState(readSavedReportDeck());
+  const [activePresetName, setActivePresetName] = useState(readActiveReportPresetName());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const refresh = () => setSavedDeck(readSavedReportDeck());
+    const refresh = () => {
+      setSavedDeck(readSavedReportDeck());
+      setActivePresetName(readActiveReportPresetName());
+    };
     refresh();
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
@@ -208,6 +216,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("biohuez-topbar-collapsed");
+    if (saved === "true") setTopbarCollapsed(true);
+  }, []);
+
+  useEffect(() => {
     document.documentElement.style.setProperty("--biohuez-dark", theme.dark);
     document.documentElement.style.setProperty("--biohuez-canvas", theme.canvas);
     document.documentElement.style.setProperty("--biohuez-sage", theme.sage);
@@ -223,6 +237,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     setReportMode(current => {
       window.localStorage.setItem("biohuez-report-mode", String(!current));
       return !current;
+    });
+  }
+
+  function toggleTopbarCollapsed() {
+    setTopbarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("biohuez-topbar-collapsed", String(next));
+      return next;
     });
   }
 
@@ -249,8 +271,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             controller={slideDeck}
             pageTitle={activeNav}
             pageSubtitle={pageSubtitles[activeNav] || ""}
-            pagePosition={reportDeckMode === "custom" && customDeckIndex >= 0 ? `Deck ${customDeckIndex + 1} of ${savedDeck.length}` : `Page ${reportStepIndex + 1} of ${reportStepItems.length}`}
-            deckLabel={reportDeckMode === "custom" && savedDeck.length ? `Custom Deck · ${savedDeck.length} slides` : "Build Big Report"}
+            pagePosition={reportDeckMode === "custom" && customDeckIndex >= 0 ? `${activePresetName ? `${activePresetName} · ` : ""}Deck ${customDeckIndex + 1} of ${savedDeck.length}` : `Page ${reportStepIndex + 1} of ${reportStepItems.length}`}
+            deckLabel={reportDeckMode === "custom" && savedDeck.length ? `${activePresetName || "Custom Deck"} · ${savedDeck.length} slides` : "Build Big Report"}
             onOpenBuilder={() => router.push("/report-builder")}
             onPrevPage={() => {
               if (reportDeckMode === "custom" && customDeckIndex > 0) {
@@ -362,14 +384,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <div className="commercial-workspace">
-        <header className="commercial-topbar">
+        <header className={`commercial-topbar ${topbarCollapsed ? "is-collapsed" : ""}`}>
           <div className="commercial-topbar-heading">
             <button className="commercial-icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open navigation">
               <Menu size={19} />
             </button>
             <div className="min-w-0 flex-1">
               <h1>{activeNav}</h1>
-              <p>{pageSubtitles[activeNav] || ""}</p>
+              {!topbarCollapsed ? <p>{pageSubtitles[activeNav] || ""}</p> : null}
             </div>
             <div className="commercial-report-controls">
               {!reportMode ? (
@@ -377,19 +399,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   {/* Buttons moved to DashboardFilters */}
                 </>
               ) : (
-                <div className="commercial-report-toolbar" data-testid="report-toolbar">
-                  <span className="commercial-report-toolbar-label">Report Mode</span>
-                  <strong>
-                    {slideDeck.slides.length ? `${slideDeck.index + 1} / ${slideDeck.slides.length}` : "0 / 0"}
-                  </strong>
-                  <span className="commercial-report-toolbar-title" title={slideDeck.slides[slideDeck.index]?.title}>
-                    {slideDeck.slides[slideDeck.index]?.title || "Waiting for slides"}
-                  </span>
-                </div>
+                <ReportSlideNav controller={slideDeck} onExit={toggleReportMode} />
               )}
             </div>
+            <button
+              type="button"
+              className="commercial-icon-button commercial-topbar-collapse"
+              onClick={toggleTopbarCollapsed}
+              aria-label={topbarCollapsed ? "Expand top bar" : "Collapse top bar"}
+              data-testid="topbar-collapse"
+            >
+              {topbarCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
           </div>
-          {!reportMode ? (
+          {!reportMode && !topbarCollapsed ? (
             <div className="commercial-topbar-controls">
               <Suspense fallback={null}>
                 <DashboardFilters toggleReportMode={toggleReportMode} toggleCompare={toggleCompare} />

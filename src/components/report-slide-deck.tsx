@@ -4,6 +4,7 @@ import Image from "next/image"
 import Link from "next/link"
 import * as React from "react"
 import { ChevronLeft, ChevronRight, Grid3x3, LayoutTemplate, Maximize2, PanelsTopLeft, X } from "lucide-react"
+import { isCustomModuleSlideKey } from "@/lib/report-library"
 import { cn } from "@/lib/utils"
 
 interface SlideMeta {
@@ -39,6 +40,7 @@ export function useReportSlideDeckWithPaging(
 
   const rescanSlides = React.useCallback(() => {
     const els = Array.from(document.querySelectorAll<HTMLElement>("[data-report-slide]"))
+      .filter((el) => !el.closest("[data-state='inactive'], [hidden]"))
     const next: SlideMeta[] = els.map((el) => ({
       key: el.dataset.slideKey || "",
       title: el.dataset.slideTitle || "Untitled",
@@ -258,7 +260,10 @@ export function ReportSlideSidebar({
 
       <div className="commercial-report-sidebar-status">
         <span>{slides.length ? `Slide ${index + 1} of ${slides.length}` : "No slides yet"}</span>
-        <strong title={current?.title}>{current?.title || "Wrap sections in ReportSlide"}</strong>
+        <div className="commercial-report-sidebar-title-row">
+          <strong title={current?.title}>{current?.title || "Wrap sections in ReportSlide"}</strong>
+          {current && isCustomModuleSlideKey(current.key) ? <em>Custom</em> : null}
+        </div>
       </div>
 
       <nav className="commercial-report-slide-nav" aria-label="Report slides">
@@ -281,7 +286,10 @@ export function ReportSlideSidebar({
                 <div className="commercial-report-slide-thumb-notes" />
               </div>
               <div>
-                <strong>{slide.title}</strong>
+                <div className="commercial-report-slide-label-row">
+                  <strong>{slide.title}</strong>
+                  {isCustomModuleSlideKey(slide.key) ? <em>Custom</em> : null}
+                </div>
                 <small>{slide.summary || "Presentation-ready container slide."}</small>
               </div>
             </button>
@@ -419,7 +427,7 @@ export function ReportSlideSorter({
           <span>Brand Report · Slide Sorter</span>
           <strong>{slides.length} container slides</strong>
         </div>
-        <p>Click any tile to jump in. Use ← → or Page-Down to step through slides.</p>
+        <p>Click any tile to jump in, then switch back to Slides to present one section at a time.</p>
       </header>
       <div className="report-sorter-grid">
         {slides.map((s, i) => (
@@ -430,7 +438,11 @@ export function ReportSlideSorter({
             data-testid={`report-sorter-tile-${i + 1}`}
           >
             <span className="report-sorter-card-num">{i + 1}</span>
-            <strong>{s.title}</strong>
+            <div className="report-sorter-card-label-row">
+              <strong>{s.title}</strong>
+              {isCustomModuleSlideKey(s.key) ? <em>Custom</em> : null}
+            </div>
+            <p>{s.summary || "Presentation-ready container slide."}</p>
           </button>
         ))}
       </div>

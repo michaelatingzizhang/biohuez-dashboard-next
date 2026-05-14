@@ -22,6 +22,14 @@ export function buildReportSlideKey(title: string) {
   return slugifyReportText(title)
 }
 
+export function buildCustomModuleSlideKey(moduleId: string) {
+  return `custom-module-${slugifyReportText(moduleId)}`
+}
+
+export function isCustomModuleSlideKey(slideKey: string | null | undefined) {
+  return Boolean(slideKey && slideKey.startsWith("custom-module-"))
+}
+
 export function buildGlobalReportSlideId(path: string, slideKey: string) {
   return `${path}#${slideKey}`
 }
